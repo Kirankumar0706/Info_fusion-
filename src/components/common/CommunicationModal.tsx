@@ -15,11 +15,18 @@ export const CommunicationModal: React.FC<CommunicationModalProps> = ({ isOpen, 
 
   if (!isOpen) return null;
 
-  const generated = generateCommunication(commType, {
+  const typeMapping: Record<string, 'stakeholder_clarification' | 'executive_memo' | 'meeting_agenda' | 'action_checklist'> = {
+    vendor_clarification: 'stakeholder_clarification',
+    executive_memo: 'executive_memo',
+    meeting_agenda: 'meeting_agenda',
+    follow_up: 'action_checklist',
+  };
+
+  const generated = generateCommunication(typeMapping[commType] || 'executive_memo', {
     conflicts,
     findings,
     actions,
-    vendorName: currentWorkspace?.organization || 'External Stakeholder',
+    organizationName: currentWorkspace?.organization || 'External Stakeholder',
   });
 
   const handleCopy = () => {

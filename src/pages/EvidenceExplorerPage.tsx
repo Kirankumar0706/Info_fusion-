@@ -53,11 +53,14 @@ export const EvidenceExplorerPage: React.FC = () => {
     workspace_id: currentWorkspace.id,
     title: conflicts.length > 0 || evidenceGaps.length > 0 ? 'Review Required' : 'Ready',
     status: conflicts.length > 0 || evidenceGaps.length > 0 ? 'review_required' : 'ready',
+    summary: 'Automated decision synthesis across workspace documents.',
     recommendation: conflicts.length > 0 || evidenceGaps.length > 0 
       ? 'Perform manual audit and reconciliation on detected discrepancies and missing approvals.'
       : 'All extracted facts corroborated across uploaded workspace documents.',
     reasoning: `Synthesized from ${facts.length} facts, ${conflicts.length} contradiction(s), and ${evidenceGaps.length} evidence gap(s).`,
     confidence: 0.94,
+    factors: [],
+    created_by: 'System Intelligence',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   } as Decision : null);
@@ -168,7 +171,7 @@ export const EvidenceExplorerPage: React.FC = () => {
                         type: 'decision',
                         title: primaryDecision.title,
                         value: primaryDecision.status.replace('_', ' ').toUpperCase(),
-                        confidence: primaryDecision.confidence,
+                        confidence: primaryDecision.confidence ?? 0.94,
                         verification_status: primaryDecision.status === 'ready' ? 'verified' : 'uncertain',
                         explanation: primaryDecision.reasoning,
                         related_findings: findings.map(f => f.title),
@@ -400,13 +403,13 @@ export const EvidenceExplorerPage: React.FC = () => {
                                 setSelectedNode({
                                   id: gap.id,
                                   type: 'gap',
-                                  title: `Missing Evidence: ${gap.missing_evidence_type}`,
-                                  value: 'Evidence gap detected - Evidence unavailable',
+                                  title: `Missing Evidence: ${gap.missing_evidence_type || gap.required_evidence || gap.category}`,
+                                  value: 'Evidence gap detected — Evidence unavailable',
                                   confidence: 0.95,
                                   verification_status: 'gap',
-                                  explanation: `Required governance document "${gap.missing_evidence_type}" not uploaded to this workspace.`,
+                                  explanation: `Required governance document "${gap.missing_evidence_type || gap.required_evidence || gap.category}" not uploaded to this workspace.`,
                                   location: 'Workspace Global Repository',
-                                  related_findings: [`Missing Evidence: ${gap.missing_evidence_type}`],
+                                  related_findings: [`Missing Evidence: ${gap.missing_evidence_type || gap.required_evidence || gap.category}`],
                                 });
                               }}
                               className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
@@ -441,7 +444,7 @@ export const EvidenceExplorerPage: React.FC = () => {
                                     <span className="text-[10px] font-mono text-amber-300">Mandatory Proof</span>
                                   </div>
                                   <div className="text-xs text-slate-200">
-                                    "{gap.missing_evidence_type}" required for verification.
+                                    "{gap.missing_evidence_type || gap.required_evidence || gap.category}" required for verification.
                                   </div>
                                   <div className="pt-2 border-t border-amber-500/20 flex items-center justify-between text-[11px] text-red-300 font-mono">
                                     <span>LEVEL 4: EVIDENCE STATUS:</span>

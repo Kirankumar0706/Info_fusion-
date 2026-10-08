@@ -59,8 +59,10 @@ export const AskAssistantPage: React.FC = () => {
       if (sources.length === 0) {
         resp = {
           answer: `No documents have been uploaded to workspace "${currentWorkspace.name}" yet. Please upload documents so InfoFusion can extract verified facts, detect contradictions, and answer your query with cited evidence.`,
+          language: selectedL === 'auto' ? 'en' : selectedL,
           language_used: selectedL === 'auto' ? 'en' : selectedL,
           citations: [],
+          sources_used: [],
           status: 'missing_evidence',
           confidence: 0,
         };
@@ -205,7 +207,7 @@ export const AskAssistantPage: React.FC = () => {
                         ? 'bg-red-500/20 text-red-300'
                         : 'bg-amber-500/20 text-amber-300'
                     }`}>
-                      {item.response.status.replace('_', ' ')}
+                      {item.response.status ? item.response.status.replace('_', ' ') : 'VERIFIED'}
                     </span>
                   </div>
                 </div>

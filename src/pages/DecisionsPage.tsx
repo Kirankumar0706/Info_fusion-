@@ -205,13 +205,13 @@ export const DecisionsPage: React.FC = () => {
                   {decision.factors.map((f, i) => (
                     <tr key={i} className="hover:bg-white/[0.02] transition-colors">
                       <td className="py-3 px-3 font-semibold text-white">
-                        {f.factor_name}
+                        {f.factor_name || f.factor}
                       </td>
                       <td className="py-3 px-3">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                          f.status === 'pass'
+                          f.status === 'pass' || f.status === 'supported'
                             ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                            : f.status === 'fail'
+                            : f.status === 'fail' || f.status === 'conflict'
                             ? 'bg-red-500/10 text-red-400 border border-red-500/20'
                             : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                         }`}>
@@ -219,10 +219,10 @@ export const DecisionsPage: React.FC = () => {
                         </span>
                       </td>
                       <td className="py-3 px-3 text-slate-300 max-w-md">
-                        {f.finding}
+                        {f.finding || f.detail}
                       </td>
                       <td className="py-3 px-3 font-mono text-slate-400 uppercase text-[10px]">
-                        {f.weight}
+                        {f.weight ?? f.impact ?? 'High'}
                       </td>
                     </tr>
                   ))}

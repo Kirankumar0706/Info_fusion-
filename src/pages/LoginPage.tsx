@@ -1,26 +1,40 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Radar, ArrowRight, ShieldCheck, Sparkles, Lock, Mail } from 'lucide-react';
+import { Radar, ArrowRight, ShieldCheck, Sparkles, Lock, Mail, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { useWorkspace } from '../context/WorkspaceContext';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const { loadDemoWorkspace } = useWorkspace();
-  const [email, setEmail] = useState('gokul@enterprise.org');
-  const [password, setPassword] = useState('••••••••••••');
-  const [isLoading, setIsLoading] = useState(false);
+  const { signIn, demoSignIn, isLoading: authLoading, authError } = useAuth();
+  const { loadGenericTestScenario } = useWorkspace();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    setTimeout(() => {
-      loadDemoWorkspace();
+    if (!email || !password) return;
+
+    setIsSubmitting(true);
+    setErrorMsg(null);
+
+    const result = await signIn(email, password);
+    setIsSubmitting(false);
+
+    if (result.success) {
       navigate('/dashboard');
-    }, 400);
+    } else {
+      setErrorMsg(result.error || 'Failed to authenticate. Please check your credentials or use Judge Demo mode.');
+    }
   };
 
-  const handleDemoSignIn = () => {
-    loadDemoWorkspace();
+  const handleDemoSignIn = async () => {
+    setIsSubmitting(true);
+    await demoSignIn();
+    setIsSubmitting(false);
     navigate('/dashboard');
   };
 
@@ -33,13 +47,14 @@ export const LoginPage: React.FC = () => {
             <Radar className="w-6 h-6 text-white" />
           </div>
           <h2 className="text-2xl font-bold font-display text-white">Sign In to InfoFusion</h2>
-          <p className="text-xs text-slate-400">Enterprise Information Intelligence Platform</p>
+          <p className="text-xs text-slate-400">Enterprise Multi-Organization Intelligence Platform</p>
         </div>
 
         {/* 1-Click Judge Demo Sign In */}
         <button
           type="button"
           onClick={handleDemoSignIn}
+          disabled={isSubmitting || authLoading}
           className="w-full p-3 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-amber-500/20 border border-amber-500/40 text-amber-300 hover:border-amber-400 flex items-center justify-center gap-2 transition-all shadow-sm"
         >
           <Sparkles className="w-4 h-4 text-amber-400" />
@@ -48,9 +63,22 @@ export const LoginPage: React.FC = () => {
 
         <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500 uppercase">
           <div className="h-px bg-white/[0.08] flex-1"></div>
-          <span>Or sign in with credentials</span>
+          <span>Or sign in with Supabase Auth</span>
           <div className="h-px bg-white/[0.08] flex-1"></div>
         </div>
+
+        {/* Error message */}
+        {(errorMsg || authError) && (
+          <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-start gap-2 animate-in fade-in">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+            <div>
+              <p className="font-semibold">{errorMsg || authError}</p>
+              <p className="text-[11px] text-red-400/80 mt-0.5">
+                Tip: You can use the One-Click Judge Demo Sign In above, or create a new account.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Form */}
         <form onSubmit={handleLogin} className="space-y-4 text-xs">
@@ -94,10 +122,10 @@ export const LoginPage: React.FC = () => {
 
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isSubmitting || authLoading}
             className="w-full py-3 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-glow-primary transition-all flex items-center justify-center gap-1.5"
           >
-            <span>{isLoading ? 'Authenticating...' : 'Sign In'}</span>
+            <span>{isSubmitting || authLoading ? 'Authenticating with Supabase...' : 'Sign In'}</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </form>
@@ -105,7 +133,7 @@ export const LoginPage: React.FC = () => {
         <div className="text-center text-xs text-slate-400">
           Don't have an enterprise account?{' '}
           <Link to="/signup" className="text-indigo-400 hover:underline font-semibold">
-            Create account
+            Create organization account
           </Link>
         </div>
 

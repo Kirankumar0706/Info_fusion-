@@ -181,13 +181,19 @@ export const SettingsPage: React.FC = () => {
       {activeTab === 'workspace' && (
         <div className="glass-panel p-6 rounded-2xl space-y-4 max-w-2xl">
           <h3 className="font-display font-bold text-base text-white">Current Workspace Config</h3>
-          <div className="p-4 rounded-xl bg-surface-100 border border-white/[0.06] space-y-2 text-xs">
-            <div className="text-white font-bold">{currentWorkspace.name}</div>
-            <div className="text-slate-300">{currentWorkspace.description}</div>
-            <div className="text-[11px] font-mono text-slate-400 pt-1">
-              Organization: {currentWorkspace.organization} • ID: {currentWorkspace.id}
+          {currentWorkspace ? (
+            <div className="p-4 rounded-xl bg-surface-100 border border-white/[0.06] space-y-2 text-xs">
+              <div className="text-white font-bold">{currentWorkspace.name}</div>
+              <div className="text-slate-300">{currentWorkspace.description}</div>
+              <div className="text-[11px] font-mono text-slate-400 pt-1">
+                Organization: {currentWorkspace.organization} • ID: {currentWorkspace.id}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="p-4 rounded-xl bg-surface-100 border border-white/[0.06] text-xs text-slate-400">
+              No active workspace selected. Please create or select a workspace from the Workspaces page.
+            </div>
+          )}
         </div>
       )}
 

@@ -83,7 +83,7 @@ export const IntelligencePage: React.FC = () => {
       title: `Action: ${finding.title}`,
       description: `Remediation requirement for finding "${finding.title}": ${finding.recommended_action || finding.description}`,
       priority: finding.severity === 'critical' || finding.severity === 'high' ? 'high' : 'medium',
-      status: 'pending',
+      status: 'not_started',
       assigned_to: 'Audit & Compliance Officer',
       due_date: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
     });
