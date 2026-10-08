@@ -41,8 +41,11 @@ function App() {
         <Route path="/facts" element={<FactsPage />} />
         <Route path="/intelligence" element={<IntelligencePage />} />
         <Route path="/conflicts" element={<ConflictsPage />} />
+        <Route path="/contradictions" element={<Navigate to="/conflicts" replace />} />
+        <Route path="/contradiction-radar" element={<Navigate to="/conflicts" replace />} />
         <Route path="/evidence-gaps" element={<EvidenceGapsPage />} />
         <Route path="/evidence-explorer" element={<EvidenceExplorerPage />} />
+        <Route path="/evidence" element={<Navigate to="/evidence-explorer" replace />} />
         <Route path="/decisions" element={<DecisionsPage />} />
         <Route path="/actions" element={<ActionsPage />} />
         <Route path="/reports" element={<ReportsPage />} />

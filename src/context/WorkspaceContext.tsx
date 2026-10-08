@@ -8,7 +8,7 @@ import {
   evidenceService, intelligenceService, decisionService, actionService, 
   reportService, activityService 
 } from '../services';
-import { analyzeWorkspaceSource } from '../lib/aiPipeline';
+import { processWorkspaceAnalysis, createGenericTestDocuments } from '../lib/genericExtractor';
 
 interface CreateWorkspaceInput {
   name: string;
@@ -43,6 +43,7 @@ interface WorkspaceContextType {
   uploadSource: (file: File | { name: string; type: string; size: number; content: string }) => Promise<void>;
   deleteSource: (sourceId: string) => void;
   resolveConflict: (conflictId: string, resolutionNote: string) => void;
+  updateConflictStatus: (conflictId: string, status: Conflict['status'], resolutionNote?: string) => void;
   updateActionStatus: (actionId: string, newStatus: ActionItem['status']) => void;
   createAction: (action: Omit<ActionItem, 'id' | 'created_at' | 'updated_at' | 'workspace_id'>) => void;
   updateDecisionStatus: (decisionId: string, status: Decision['status'], reasoning?: string) => void;
@@ -52,6 +53,7 @@ interface WorkspaceContextType {
   logActivity: (action_type: string, entity_type: string, entity_title: string) => void;
   updateProfile: (updated: Partial<Profile>) => void;
   loadDemoWorkspace: () => void;
+  loadGenericTestScenario: () => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
@@ -233,11 +235,15 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     bumpVersion();
   };
 
-  const resolveConflict = (conflictId: string, resolutionNote: string) => {
+  const updateConflictStatus = (conflictId: string, status: Conflict['status'], resolutionNote?: string) => {
     if (!currentWorkspaceId) return;
-    conflictService.resolveConflict(conflictId, resolutionNote, profile.full_name);
-    logActivity('CONFLICT_RESOLVED', 'Conflict', `Resolved conflict ID: ${conflictId}`);
+    conflictService.updateConflictStatus(conflictId, status, resolutionNote, profile.full_name);
+    logActivity('CONFLICT_UPDATED', 'Conflict', `Updated conflict status to ${status}`);
     bumpVersion();
+  };
+
+  const resolveConflict = (conflictId: string, resolutionNote: string) => {
+    updateConflictStatus(conflictId, 'resolved', resolutionNote);
   };
 
   const updateActionStatus = (actionId: string, newStatus: ActionItem['status']) => {
@@ -251,7 +257,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (!currentWorkspaceId) return;
     actionService.createAction({
       ...actionData,
-      id: `act-${Date.now()}`,
+      id: `act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       workspace_id: currentWorkspaceId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -307,7 +313,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setProfile(prev => ({ ...prev, ...updated }));
   };
 
-  // Full Multi-stage source ingestion simulation pipeline (Section 6 & 16)
+  // Generic Multi-stage source ingestion pipeline (Section 2, 4, 6)
   const uploadSource = async (fileInput: File | { name: string; type: string; size: number; content: string }) => {
     if (!currentWorkspaceId) {
       throw new Error('Please select or create a workspace before uploading documents.');
@@ -315,28 +321,39 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     setIsProcessingUpload(true);
     const fileName = fileInput.name;
-    const fileExt = fileName.split('.').pop()?.toLowerCase() || 'pdf';
-    const fileSize = 'size' in fileInput ? fileInput.size : 1024000;
+    const fileExt = fileName.split('.').pop()?.toLowerCase() || 'txt';
+    const fileSize = 'size' in fileInput ? fileInput.size : 1024;
+
+    let textContent = '';
+    if ('content' in fileInput) {
+      textContent = fileInput.content;
+    } else if (fileInput instanceof File) {
+      try {
+        textContent = await fileInput.text();
+      } catch {
+        textContent = `Extracted text from ${fileName}. Contains operational parameters, clauses, and governance statements for verification.`;
+      }
+    }
 
     // Stage 1: Uploading
     setUploadStage('Uploading document to workspace container...');
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 350));
 
     // Stage 2: Extracting
     setUploadStage('Extracting text, parameters, and metadata...');
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 400));
 
     // Stage 3: Structuring
-    setUploadStage('Chunking & structuring extracted claims...');
-    await new Promise(r => setTimeout(r, 600));
+    setUploadStage('Structuring extracted statements and claims...');
+    await new Promise(r => setTimeout(r, 400));
 
     // Stage 4: Analyzing
-    setUploadStage('Normalizing values & cross-checking workspace documents...');
-    await new Promise(r => setTimeout(r, 600));
+    setUploadStage('Comparing claims across workspace documents for contradictions...');
+    await new Promise(r => setTimeout(r, 450));
 
     // Stage 5: Verification
-    setUploadStage('Verifying evidence provenance...');
-    await new Promise(r => setTimeout(r, 500));
+    setUploadStage('Verifying evidence provenance and missing gaps...');
+    await new Promise(r => setTimeout(r, 350));
 
     const sourceId = `src-${Date.now()}`;
     const newSource: Source = {
@@ -344,34 +361,40 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       workspace_id: currentWorkspaceId,
       uploaded_by: profile.id,
       file_name: fileName,
-      file_type: (fileExt as Source['file_type']) || 'pdf',
+      file_type: (fileExt as Source['file_type']) || 'txt',
       storage_path: `workspaces/${currentWorkspaceId}/${fileName}`,
       file_size: fileSize,
       processing_status: 'ready',
-      extracted_text: 'content' in fileInput ? fileInput.content : `Extracted document content for ${fileName}: Full operational clauses, parameters, and governance records structured for verification.`,
+      extracted_text: textContent,
       metadata: {
-        page_count: Math.floor(Math.random() * 8) + 2,
+        page_count: Math.max(1, Math.ceil(textContent.length / 1500)),
         author: profile.full_name,
         date: new Date().toLocaleDateString(),
       },
-      facts_count: 2,
+      facts_count: 0,
       conflicts_count: 0,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
-    // Run dynamic workspace-specific analysis
-    const analysis = analyzeWorkspaceSource(
+    // Run generic workspace-specific analysis
+    const analysis = processWorkspaceAnalysis(
       newSource,
       sources,
       facts,
-      currentWorkspace?.name || 'Workspace',
-      currentWorkspace?.organization || 'Organization'
+      conflicts,
+      evidenceGaps,
+      currentWorkspace?.name || 'Workspace'
     );
+
+    newSource.facts_count = analysis.facts.length;
+    newSource.conflicts_count = analysis.conflicts.length;
 
     // Save strictly to this workspace
     sourceService.addSource(newSource);
     factService.addFacts(currentWorkspaceId, analysis.facts);
+    evidenceService.addEvidenceItems(currentWorkspaceId, analysis.evidenceItems);
+
     if (analysis.conflicts.length > 0) {
       conflictService.addConflicts(currentWorkspaceId, analysis.conflicts);
     }
@@ -384,40 +407,78 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (analysis.actions.length > 0) {
       analysis.actions.forEach(a => actionService.createAction(a));
     }
-
-    // Auto-create initial decision container if none exists for this workspace
-    const existingDecisions = decisionService.getDecisions(currentWorkspaceId);
-    if (existingDecisions.length === 0) {
-      decisionService.createDecision({
-        id: `dec-${Date.now()}`,
-        workspace_id: currentWorkspaceId,
-        title: `Approve Document & Operational Baseline for ${currentWorkspace?.name || 'Workspace'}`,
-        status: analysis.conflicts.length > 0 ? 'review_required' : 'review_required',
-        summary: `Verification assessment for newly ingested records in ${currentWorkspace?.name || 'Workspace'}.`,
-        reasoning: `Analysis completed across ${sources.length + 1} source document(s). Parameter verification and reconciliation required before sign-off.`,
-        factors: [
-          {
-            factor: 'Operational Baseline',
-            status: analysis.conflicts.length > 0 ? 'conflict' : 'supported',
-            impact: 'High',
-            detail: `Verified claims extracted from ${fileName}.`
-          },
-          {
-            factor: 'Compliance & Verification',
-            status: analysis.evidenceGaps.length > 0 ? 'unverified' : 'supported',
-            impact: 'High',
-            detail: `Evidence validation across active documentation.`
-          }
-        ],
-        created_by: profile.full_name,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
+    if (analysis.decision) {
+      decisionService.createDecision(analysis.decision);
     }
 
     logActivity('SOURCE_UPLOADED', 'Source', `Uploaded and analyzed source: ${fileName}`);
     setUploadStage('Ready');
     setIsProcessingUpload(false);
+    bumpVersion();
+  };
+
+  // Section 19 Generic Test Scenario Loader
+  const loadGenericTestScenario = () => {
+    const testWsName = 'Generic Contract & Reconciliation Audit';
+    let testWs = workspaces.find(w => w.name === testWsName);
+    if (!testWs) {
+      testWs = workspaceService.createWorkspace({
+        name: testWsName,
+        organization: 'Global Enterprise Alpha',
+        description: 'Generic cross-source audit comparing contract terms with quotation revision and verifying required sign-off evidence.',
+        industry: 'Operations & Finance',
+        use_case: 'Contract Reconciliation',
+        owner_id: profile.id,
+      });
+      setWorkspaces(workspaceService.getWorkspaces());
+    }
+
+    setCurrentWorkspaceId(testWs.id);
+
+    // Ingest the 2 generic test documents if not already in this workspace
+    const existingWsSources = sourceService.getSources(testWs.id);
+    if (existingWsSources.length === 0) {
+      const { docA, docB } = createGenericTestDocuments(testWs.id);
+
+      // Process doc A
+      const analysisA = processWorkspaceAnalysis(docA, [], [], [], [], testWsName);
+      docA.facts_count = analysisA.facts.length;
+      sourceService.addSource(docA);
+      factService.addFacts(testWs.id, analysisA.facts);
+      evidenceService.addEvidenceItems(testWs.id, analysisA.evidenceItems);
+
+      // Process doc B (cross-checks against doc A -> detects the conflict and evidence gap!)
+      const analysisB = processWorkspaceAnalysis(docB, [docA], analysisA.facts, [], [], testWsName);
+      docB.facts_count = analysisB.facts.length;
+      docB.conflicts_count = analysisB.conflicts.length;
+      sourceService.addSource(docB);
+      factService.addFacts(testWs.id, analysisB.facts);
+      evidenceService.addEvidenceItems(testWs.id, analysisB.evidenceItems);
+
+      if (analysisB.conflicts.length > 0) {
+        conflictService.addConflicts(testWs.id, analysisB.conflicts);
+      }
+      if (analysisB.evidenceGaps.length > 0) {
+        evidenceService.addEvidenceGaps(testWs.id, analysisB.evidenceGaps);
+      }
+      if (analysisB.findings.length > 0) {
+        intelligenceService.addFindings(testWs.id, analysisB.findings);
+      }
+      if (analysisB.actions.length > 0) {
+        analysisB.actions.forEach(a => actionService.createAction(a));
+      }
+      if (analysisB.decision) {
+        decisionService.createDecision(analysisB.decision);
+      }
+
+      activityService.logActivity(testWs.id, {
+        user_name: profile.full_name,
+        action_type: 'GENERIC_SCENARIO_LOADED',
+        entity_type: 'Workspace',
+        entity_title: 'Ingested 2 generic test documents: 1 matching fact, 1 conflict, 1 evidence gap',
+      });
+    }
+
     bumpVersion();
   };
 
@@ -634,6 +695,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       uploadSource,
       deleteSource,
       resolveConflict,
+      updateConflictStatus,
       updateActionStatus,
       createAction,
       updateDecisionStatus,
@@ -643,6 +705,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       logActivity,
       updateProfile,
       loadDemoWorkspace,
+      loadGenericTestScenario,
     }}>
       {children}
     </WorkspaceContext.Provider>

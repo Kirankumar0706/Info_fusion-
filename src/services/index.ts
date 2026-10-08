@@ -160,19 +160,23 @@ export const conflictService = {
     setStored(KEYS.CONFLICTS, [...newConflicts, ...all]);
   },
 
-  resolveConflict(conflictId: string, resolutionNote: string, resolvedBy: string): void {
+  updateConflictStatus(conflictId: string, status: Conflict['status'], resolutionNote?: string, resolvedBy?: string): void {
     const all = getStored<Conflict[]>(KEYS.CONFLICTS, []);
     const idx = all.findIndex(c => c.id === conflictId);
     if (idx !== -1) {
       all[idx] = {
         ...all[idx],
-        status: 'resolved',
-        resolution_note: resolutionNote,
-        resolved_by: resolvedBy,
-        resolved_at: new Date().toISOString(),
+        status,
+        resolution_note: resolutionNote || all[idx].resolution_note,
+        resolved_by: resolvedBy || all[idx].resolved_by,
+        resolved_at: status === 'resolved' ? new Date().toISOString() : all[idx].resolved_at,
       };
       setStored(KEYS.CONFLICTS, all);
     }
+  },
+
+  resolveConflict(conflictId: string, resolutionNote: string, resolvedBy: string): void {
+    this.updateConflictStatus(conflictId, 'resolved', resolutionNote, resolvedBy);
   }
 };
 
@@ -181,6 +185,11 @@ export const evidenceService = {
   getEvidenceItems(workspaceId: string): EvidenceItem[] {
     const all = getStored<EvidenceItem[]>(KEYS.EVIDENCE, []);
     return all.filter(e => e.workspace_id === workspaceId);
+  },
+
+  addEvidenceItems(workspaceId: string, newEvidence: EvidenceItem[]): void {
+    const all = getStored<EvidenceItem[]>(KEYS.EVIDENCE, []);
+    setStored(KEYS.EVIDENCE, [...newEvidence, ...all]);
   },
 
   getEvidenceGaps(workspaceId: string): EvidenceGap[] {

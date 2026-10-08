@@ -40,23 +40,33 @@ export const ConflictsPage: React.FC = () => {
     );
   }
 
+  // Metric computations per Section 5
+  const totalCount = conflicts.length;
+  const highSeverityCount = conflicts.filter(c => c.severity === 'critical' || c.severity === 'high').length;
+  const mediumSeverityCount = conflicts.filter(c => c.severity === 'medium').length;
+  const lowSeverityCount = conflicts.filter(c => c.severity === 'low').length;
+
   // Filtered conflicts
   const filteredConflicts = conflicts.filter(c => {
-    if (filterSeverity !== 'all' && c.severity !== filterSeverity) return false;
-    if (filterStatus !== 'all' && c.status !== filterStatus) return false;
+    if (filterSeverity === 'high' && (c.severity !== 'critical' && c.severity !== 'high')) return false;
+    if (filterSeverity !== 'all' && filterSeverity !== 'high' && c.severity !== filterSeverity) return false;
+    
+    if (filterStatus === 'open' && (c.status !== 'open' && c.status !== 'unresolved')) return false;
+    if (filterStatus === 'under_review' && (c.status !== 'under_review' && c.status !== 'investigating')) return false;
+    if (filterStatus !== 'all' && filterStatus !== 'open' && filterStatus !== 'under_review' && c.status !== filterStatus) return false;
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const match = c.conflict_type.toLowerCase().includes(q) ||
         c.claim_a.toLowerCase().includes(q) ||
         c.claim_b.toLowerCase().includes(q) ||
-        c.explanation.toLowerCase().includes(q);
+        c.explanation.toLowerCase().includes(q) ||
+        (c.attribute && c.attribute.toLowerCase().includes(q)) ||
+        (c.subject && c.subject.toLowerCase().includes(q));
       if (!match) return false;
     }
     return true;
   });
-
-  const unresolvedCount = conflicts.filter(c => c.status === 'unresolved').length;
-  const criticalCount = conflicts.filter(c => c.severity === 'critical').length;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-150">
@@ -68,7 +78,7 @@ export const ConflictsPage: React.FC = () => {
               <Radar className="w-4 h-4 text-red-400 animate-spin" style={{ animationDuration: '6s' }} />
             </div>
             <span className="text-xs font-mono font-bold tracking-wider uppercase text-red-400">
-              AUDIT VERIFICATION LAYER • {currentWorkspace.name}
+              CONTRADICTION RADAR • {currentWorkspace.name}
             </span>
           </div>
 
@@ -77,24 +87,32 @@ export const ConflictsPage: React.FC = () => {
           </h1>
 
           <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-            Identifies conflicting claims and parameter discrepancies between documents in <strong>{currentWorkspace.name}</strong>. Unlike generative chatbots that hallucinate syntheses, InfoFusion pins each conflicting claim to its exact source and offsets.
+            Continuously compares claims, parameters, and clauses across all documents in <strong>{currentWorkspace.name}</strong>. Differences are rigorously analyzed before declaring contradictions to distinguish valid versioning from true conflicts.
           </p>
         </div>
 
-        {/* Metric Badges */}
-        <div className="flex sm:flex-row md:flex-col gap-3 relative z-10 shrink-0">
-          <div className="p-3 rounded-xl bg-surface-100 border border-red-500/30 text-center min-w-[130px]">
-            <div className="text-xs text-slate-400 font-medium">Unresolved Conflicts</div>
-            <div className="text-2xl font-bold font-display text-red-400">{unresolvedCount}</div>
+        {/* Dynamic Severity Metric Badges (Section 5) */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-2 lg:grid-cols-4 gap-2.5 relative z-10 shrink-0">
+          <div className="p-3 rounded-xl bg-surface-100 border border-white/[0.08] text-center min-w-[95px]">
+            <div className="text-[10px] text-slate-400 font-mono uppercase font-medium">Total</div>
+            <div className="text-xl font-bold font-display text-white">{totalCount}</div>
           </div>
-          <div className="p-3 rounded-xl bg-surface-100 border border-white/[0.08] text-center min-w-[130px]">
-            <div className="text-xs text-slate-400 font-medium">Critical Severity</div>
-            <div className="text-2xl font-bold font-display text-orange-400">{criticalCount}</div>
+          <div className="p-3 rounded-xl bg-surface-100 border border-red-500/30 text-center min-w-[95px]">
+            <div className="text-[10px] text-red-400 font-mono uppercase font-medium">High / Critical</div>
+            <div className="text-xl font-bold font-display text-red-400">{highSeverityCount}</div>
+          </div>
+          <div className="p-3 rounded-xl bg-surface-100 border border-amber-500/30 text-center min-w-[95px]">
+            <div className="text-[10px] text-amber-400 font-mono uppercase font-medium">Medium</div>
+            <div className="text-xl font-bold font-display text-amber-400">{mediumSeverityCount}</div>
+          </div>
+          <div className="p-3 rounded-xl bg-surface-100 border border-blue-500/30 text-center min-w-[95px]">
+            <div className="text-[10px] text-blue-400 font-mono uppercase font-medium">Low</div>
+            <div className="text-xl font-bold font-display text-blue-400">{lowSeverityCount}</div>
           </div>
         </div>
       </div>
 
-      {/* If No Conflicts Detected: Empty State (Section 5) */}
+      {/* If No Conflicts Detected: Exact Empty State per Section 5 & 18 */}
       {conflicts.length === 0 ? (
         <div className="glass-panel p-12 rounded-3xl text-center space-y-5 border-white/[0.08]">
           <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 flex items-center justify-center mx-auto">
@@ -102,11 +120,11 @@ export const ConflictsPage: React.FC = () => {
           </div>
 
           <div className="space-y-1.5 max-w-md mx-auto">
-            <h3 className="text-lg font-bold text-white">No contradictions detected yet.</h3>
+            <h3 className="text-lg font-bold text-white">No contradictions detected in this workspace.</h3>
             <p className="text-xs text-slate-400 leading-relaxed">
               {sources.length === 0 
-                ? "Upload multiple documents to this workspace to enable automated cross-document consistency auditing."
-                : "All extracted claims in this workspace are mutually consistent or within allowable thresholds."}
+                ? "Upload documents to start extracting facts and detecting contradictions across sources."
+                : "All extracted facts and claims in this workspace are mutually consistent or have non-conflicting contexts."}
             </p>
           </div>
 
@@ -125,38 +143,49 @@ export const ConflictsPage: React.FC = () => {
       ) : (
         <>
           {/* Filter and Search Bar */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 rounded-xl bg-surface-100 border border-white/[0.08]">
-            {/* Severity Filters */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-              <span className="text-xs text-slate-400 font-mono pl-2 pr-1 hidden sm:inline">Severity:</span>
-              {['all', 'critical', 'high', 'medium', 'low'].map((sev) => (
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 p-3 rounded-xl bg-surface-100 border border-white/[0.08]">
+            {/* Severity and Status Filters */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 flex-wrap">
+              <span className="text-xs text-slate-400 font-mono pl-1 pr-1">Severity:</span>
+              {[
+                { id: 'all', label: 'All' },
+                { id: 'high', label: 'High' },
+                { id: 'medium', label: 'Medium' },
+                { id: 'low', label: 'Low' },
+              ].map((sev) => (
                 <button
-                  key={sev}
-                  onClick={() => setFilterSeverity(sev)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all shrink-0 ${
-                    filterSeverity === sev
+                  key={sev.id}
+                  onClick={() => setFilterSeverity(sev.id)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all shrink-0 ${
+                    filterSeverity === sev.id
                       ? 'bg-indigo-600 text-white shadow-sm'
                       : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'
                   }`}
                 >
-                  {sev}
+                  {sev.label}
                 </button>
               ))}
 
-              <span className="text-xs text-slate-400 font-mono px-2 hidden sm:inline">|</span>
+              <span className="text-xs text-slate-500 font-mono px-1">|</span>
 
-              {/* Status Filters */}
-              {['all', 'unresolved', 'resolved'].map((stat) => (
+              <span className="text-xs text-slate-400 font-mono pr-1">Status:</span>
+              {[
+                { id: 'all', label: 'All' },
+                { id: 'open', label: 'Open' },
+                { id: 'under_review', label: 'Under Review' },
+                { id: 'resolved', label: 'Resolved' },
+                { id: 'dismissed', label: 'Dismissed' },
+              ].map((stat) => (
                 <button
-                  key={stat}
-                  onClick={() => setFilterStatus(stat)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all shrink-0 ${
-                    filterStatus === stat
+                  key={stat.id}
+                  onClick={() => setFilterStatus(stat.id)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all shrink-0 ${
+                    filterStatus === stat.id
                       ? 'bg-surface-50 text-indigo-300 border border-indigo-500/30 font-semibold'
                       : 'text-slate-300 hover:bg-white/[0.05]'
                   }`}
                 >
-                  {stat}
+                  {stat.label}
                 </button>
               ))}
             </div>
@@ -180,7 +209,7 @@ export const ConflictsPage: React.FC = () => {
               <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
               <h3 className="text-base font-semibold text-white">No Contradictions Matching Filters</h3>
               <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                No active conflicts meet your selected severity or status filter criteria.
+                No active contradictions in this workspace match your selected severity or status filter criteria.
               </p>
             </div>
           ) : (
@@ -194,13 +223,13 @@ export const ConflictsPage: React.FC = () => {
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/[0.06]">
                     <div className="flex items-center gap-2.5 flex-wrap">
                       <span className={`px-2.5 py-0.5 rounded text-xs font-mono font-bold uppercase ${
-                        conflict.severity === 'critical' 
+                        conflict.severity === 'critical' || conflict.severity === 'high'
                           ? 'bg-red-500/20 text-red-400 border border-red-500/40' 
-                          : conflict.severity === 'high' 
-                          ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' 
-                          : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+                          : conflict.severity === 'medium'
+                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' 
+                          : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
                       }`}>
-                        {conflict.severity} SEVERITY
+                        {conflict.severity === 'critical' ? 'HIGH' : conflict.severity.toUpperCase()} SEVERITY
                       </span>
                       <h3 className="font-display font-bold text-sm sm:text-base text-white">
                         {conflict.conflict_type}
@@ -212,26 +241,39 @@ export const ConflictsPage: React.FC = () => {
                       <span className={`text-xs font-mono uppercase font-bold px-2 py-0.5 rounded ${
                         conflict.status === 'resolved' 
                           ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                          : conflict.status === 'dismissed'
+                          ? 'bg-slate-500/10 text-slate-400 border border-slate-500/20'
+                          : conflict.status === 'under_review' || conflict.status === 'investigating'
+                          ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                           : 'bg-red-500/10 text-red-400 border border-red-500/20'
                       }`}>
-                        {conflict.status}
+                        {conflict.status.replace('_', ' ')}
                       </span>
                       <button
                         onClick={() => setSelectedConflict(conflict)}
                         className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 flex items-center gap-1.5 transition-all shadow-sm"
                       >
-                        <span>Investigate</span>
+                        <span>Inspect & Resolve</span>
                         <ArrowRight className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
 
-                  {/* Conflict Side-by-Side Comparison Box */}
+                  {/* Detection Reason Banner */}
+                  <div className="p-3.5 rounded-xl bg-surface-100 border border-white/[0.06] flex items-start gap-2.5 text-xs">
+                    <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-semibold text-slate-200">Detection Reason: </span>
+                      <span className="text-slate-300">{conflict.explanation}</span>
+                    </div>
+                  </div>
+
+                  {/* Conflicting Values Side-by-Side Comparison Box */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Source A */}
+                    {/* Value 1 / Source A */}
                     <div className="p-4 rounded-xl bg-surface-100 border border-white/[0.06] space-y-2">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-mono text-[11px] font-bold text-indigo-400">SOURCE A</span>
+                        <span className="font-mono text-[11px] font-bold text-indigo-400">VALUE 1 (SOURCE A)</span>
                         <span className="text-slate-400 font-mono text-[10px]">{conflict.source_a_location}</span>
                       </div>
                       <div className="flex items-center gap-2 text-xs font-medium text-white truncate">
@@ -243,10 +285,10 @@ export const ConflictsPage: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Source B */}
+                    {/* Value 2 / Source B */}
                     <div className="p-4 rounded-xl bg-surface-100 border border-white/[0.06] space-y-2">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-mono text-[11px] font-bold text-amber-400">SOURCE B</span>
+                        <span className="font-mono text-[11px] font-bold text-amber-400">VALUE 2 (SOURCE B)</span>
                         <span className="text-slate-400 font-mono text-[10px]">{conflict.source_b_location}</span>
                       </div>
                       <div className="flex items-center gap-2 text-xs font-medium text-white truncate">
@@ -259,20 +301,24 @@ export const ConflictsPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Calculated Delta and Explanation */}
-                  <div className="p-3.5 rounded-xl bg-surface-200/70 border border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                    <div className="flex items-start gap-2 text-slate-300">
-                      <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                      <span>{conflict.explanation}</span>
+                  {/* Variance and Traceability Footer */}
+                  <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                    <div className="font-mono font-bold text-indigo-300 bg-indigo-500/10 px-2.5 py-1 rounded border border-indigo-500/20 inline-block">
+                      Variance: {conflict.difference_summary}
                     </div>
-                    <div className="shrink-0 font-mono font-bold text-indigo-300 bg-indigo-500/10 px-2.5 py-1 rounded border border-indigo-500/20">
-                      {conflict.difference_summary}
-                    </div>
+
+                    <button
+                      onClick={() => navigate('/evidence')}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-semibold self-end sm:self-auto"
+                    >
+                      <span>Trace Evidence Lineage</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
                   </div>
 
                   {conflict.resolution_note && (
                     <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300">
-                      <strong>Resolution: </strong> {conflict.resolution_note}
+                      <strong>Audit Resolution Note: </strong> {conflict.resolution_note}
                     </div>
                   )}
                 </div>

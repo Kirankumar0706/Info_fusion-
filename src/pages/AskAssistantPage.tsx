@@ -21,7 +21,7 @@ import { NoWorkspaceState } from '../components/common/NoWorkspaceState';
 import { AssistantAnswer } from '../types';
 
 export const AskAssistantPage: React.FC = () => {
-  const { currentWorkspace, conflicts, evidenceGaps, findings, sources, activeLanguage, setActiveLanguage } = useWorkspace();
+  const { currentWorkspace, conflicts, evidenceGaps, findings, sources, facts, activeLanguage, setActiveLanguage } = useWorkspace();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [targetLang, setTargetLang] = useState(activeLanguage || 'auto');
@@ -40,10 +40,10 @@ export const AskAssistantPage: React.FC = () => {
   }
 
   const sampleQueries = [
-    { label: 'Major Risks & Contradictions', text: 'What are the major risks and contradictions detected in this workspace?' },
+    { label: 'Why Review Required?', text: 'Why is this decision marked Review Required?' },
+    { label: 'Major Contradictions', text: 'What are the major contradictions detected between documents in this workspace?' },
     { label: 'Missing Evidence', text: 'Which claims have insufficient or missing evidence?' },
-    { label: 'Cross-Document Inconsistencies', text: 'Are there contradictions between the uploaded documents?' },
-    { label: 'Key Facts Summary', text: 'Can you summarize key verified facts extracted from these documents?' },
+    { label: 'Extracted Facts', text: 'What are the key facts extracted from the documents?' },
   ];
 
   const handleSend = (textToSend?: string, langOverride?: string) => {
@@ -66,6 +66,9 @@ export const AskAssistantPage: React.FC = () => {
         };
       } else {
         resp = queryWorkspaceMultilingual(q, selectedL, {
+          workspaceName: currentWorkspace.name,
+          sources,
+          facts,
           conflicts,
           evidenceGaps,
           findings,
@@ -75,7 +78,7 @@ export const AskAssistantPage: React.FC = () => {
       setChatHistory(prev => [...prev, { query: q, response: resp }]);
       setQuery('');
       setIsLoading(false);
-    }, 400);
+    }, 300);
   };
 
   return (
@@ -212,24 +215,47 @@ export const AskAssistantPage: React.FC = () => {
                   {item.response.answer}
                 </p>
 
-                {/* Source Citations */}
-                {item.response.citations && item.response.citations.length > 0 && (
+                {/* Source Citations & Provenance */}
+                {((item.response.sources_used && item.response.sources_used.length > 0) || (item.response.citations && item.response.citations.length > 0)) && (
                   <div className="pt-3 border-t border-white/[0.06] space-y-2">
                     <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400">
                       <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>Audited Source Citations:</span>
+                      <span>Audited Source Provenance & Citations:</span>
                     </div>
-                    <div className="space-y-1.5">
-                      {item.response.citations.map((cite, cIdx) => (
-                        <div 
-                          key={cIdx}
-                          className="flex items-center gap-2 p-2 rounded-lg bg-surface-100 border border-white/[0.04] text-[11px] text-slate-300 font-mono"
-                        >
-                          <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                          <span className="truncate">{cite}</span>
-                        </div>
-                      ))}
-                    </div>
+
+                    {item.response.sources_used && item.response.sources_used.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {item.response.sources_used.map((src, sIdx) => (
+                          <div 
+                            key={sIdx}
+                            className="p-2.5 rounded-xl bg-surface-100 border border-white/[0.06] space-y-1 text-[11px]"
+                          >
+                            <div className="flex items-center justify-between text-slate-300 font-medium">
+                              <div className="flex items-center gap-1.5 truncate">
+                                <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                                <span className="truncate">{src.source_name}</span>
+                              </div>
+                              <span className="text-[10px] font-mono text-slate-400 shrink-0">{src.location}</span>
+                            </div>
+                            <div className="font-mono text-indigo-200/90 text-[10px] pl-5 italic truncate">
+                              "{src.quote}"
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {item.response.citations?.map((cite, cIdx) => (
+                          <div 
+                            key={cIdx}
+                            className="flex items-center gap-2 p-2 rounded-lg bg-surface-100 border border-white/[0.04] text-[11px] text-slate-300 font-mono"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                            <span className="truncate">{cite}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

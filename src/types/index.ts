@@ -3,9 +3,9 @@ export type MemberRole = 'owner' | 'admin' | 'editor' | 'viewer';
 export type ProcessingStatus = 'uploading' | 'extracting' | 'structuring' | 'analyzing' | 'ready' | 'failed';
 export type FactStatus = 'supported' | 'uncertain' | 'conflicting' | 'missing_evidence';
 export type ConflictSeverity = 'critical' | 'high' | 'medium' | 'low';
-export type ConflictStatus = 'unresolved' | 'resolved' | 'investigating' | 'dismissed';
+export type ConflictStatus = 'open' | 'under_review' | 'resolved' | 'dismissed' | 'unresolved' | 'investigating';
 export type FindingSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
-export type DecisionStatus = 'approved' | 'rejected' | 'review_required' | 'draft';
+export type DecisionStatus = 'approved' | 'rejected' | 'review_required' | 'draft' | 'ready' | 'blocked' | 'insufficient_evidence';
 export type ActionPriority = 'urgent' | 'high' | 'medium' | 'low';
 export type ActionStatus = 'not_started' | 'in_progress' | 'completed' | 'blocked';
 export type ReportType = 'executive_brief' | 'detailed_analysis' | 'conflict_report' | 'evidence_report' | 'action_plan' | 'complete_workspace';
@@ -50,7 +50,7 @@ export interface Source {
   workspace_id: string;
   uploaded_by: string;
   file_name: string;
-  file_type: 'pdf' | 'docx' | 'xlsx' | 'csv' | 'txt' | 'md' | 'image';
+  file_type: 'pdf' | 'docx' | 'xlsx' | 'csv' | 'txt' | 'md' | 'image' | string;
   storage_path: string;
   file_size: number;
   processing_status: ProcessingStatus;
@@ -74,14 +74,19 @@ export interface Fact {
   workspace_id: string;
   source_id: string;
   source_name?: string;
+  subject?: string;
+  attribute?: string;
+  value?: string;
   claim: string;
   normalized_key: string;
   normalized_value: string;
   value_type: 'string' | 'number' | 'currency' | 'date' | 'boolean' | 'duration';
-  category: 'commercial' | 'legal' | 'technical' | 'sla' | 'compliance' | 'delivery' | 'security' | 'general';
-  confidence: number; // 0.0 to 1.0
+  category: 'commercial' | 'legal' | 'technical' | 'sla' | 'compliance' | 'delivery' | 'security' | 'general' | string;
+  confidence: number; // 0.0 to 1.0 or 0-100
   status: FactStatus;
+  verification_status?: 'verified' | 'uncertain' | 'unverified';
   source_location: string; // e.g. "Page 4, Section 3.2" or "Row 18"
+  source_document_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -89,6 +94,8 @@ export interface Fact {
 export interface Conflict {
   id: string;
   workspace_id: string;
+  subject?: string;
+  attribute?: string;
   fact_a_id: string;
   fact_b_id: string;
   claim_a: string;
@@ -103,11 +110,14 @@ export interface Conflict {
   conflict_type: string;
   severity: ConflictSeverity;
   explanation: string;
+  detection_reason?: string;
   confidence: number;
   status: ConflictStatus;
   resolution_note?: string;
   resolved_by?: string;
   resolved_at?: string;
+  evidence_a_id?: string;
+  evidence_b_id?: string;
   created_at: string;
 }
 
@@ -144,9 +154,13 @@ export interface Finding {
   severity: FindingSeverity;
   confidence: number;
   status: 'active' | 'mitigated' | 'resolved';
-  finding_type: 'inconsistency' | 'missing_evidence' | 'compliance_gap' | 'commercial_risk' | 'opportunity';
+  category?: 'Risk' | 'Conflict' | 'Missing Evidence' | 'Important Change' | 'Anomaly' | 'Verification Required' | 'Opportunity' | 'General Finding' | string;
+  finding_type: 'inconsistency' | 'missing_evidence' | 'compliance_gap' | 'commercial_risk' | 'opportunity' | string;
   evidence_count: number;
   sources_involved: string[];
+  supporting_facts?: string[];
+  related_contradictions?: string[];
+  related_evidence_gaps?: string[];
   explanation: string;
   recommended_action: string;
   created_at: string;
@@ -217,12 +231,14 @@ export interface MultilingualQuery {
 export interface AssistantAnswer {
   answer: string;
   language: string;
-  issues_count: number;
-  key_points: string[];
+  issues_count?: number;
+  key_points?: string[];
+  citations?: string[];
   sources_used: {
     source_name: string;
     location: string;
     quote: string;
   }[];
   confidence: number;
+  status?: string;
 }

@@ -65,12 +65,12 @@ export const DashboardPage: React.FC = () => {
   // Computed metrics based strictly on current workspace data (Section 3 & 8)
   const totalSources = sources.length;
   const totalFacts = facts.length;
-  const verifiedFacts = facts.filter(f => f.status === 'supported').length;
+  const verifiedFacts = facts.filter(f => f.verification_status === 'verified' || f.status === 'supported').length;
   const conflictingFacts = facts.filter(f => f.status === 'conflicting').length;
-  const uncertainFacts = facts.filter(f => f.status === 'uncertain').length;
-  const missingFacts = facts.filter(f => f.status === 'missing_evidence').length;
+  const uncertainFacts = facts.filter(f => f.verification_status === 'uncertain' || f.status === 'uncertain').length;
+  const missingFacts = facts.filter(f => f.verification_status === 'unverified' || f.status === 'missing_evidence').length;
 
-  const unresolvedConflicts = conflicts.filter(c => c.status === 'unresolved');
+  const unresolvedConflicts = conflicts.filter(c => c.status === 'open' || c.status === 'unresolved' || c.status === 'under_review' || c.status === 'investigating');
   const activeGaps = evidenceGaps.filter(g => g.status === 'evidence_required');
   const highImpactFindings = findings.filter(f => f.severity === 'critical' || f.severity === 'high');
   const openActions = actions.filter(a => a.status !== 'completed');
