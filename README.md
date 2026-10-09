@@ -55,22 +55,28 @@ To demo the complete **FIND → UNDERSTAND → ORGANIZE → VERIFY → DECIDE �
 ## 🏗️ Technology Architecture
 
 - **Frontend:** React 19 + TypeScript + Tailwind CSS (Custom Dark Navy `#0B0F19` & Electric Indigo design system)
-- **Icons & Visuals:** Lucide React + Canvas Confetti + Custom Radar keyframe animations
-- **Backend & Storage:** Supabase PostgreSQL + Supabase Auth + Supabase Storage with strict Row-Level Security (RLS)
-- **Database Schema:** Located in [`supabase/schema.sql`](supabase/schema.sql) with 13 core tables, indexes, and RLS policies:
-  1. `profiles`
-  2. `workspaces`
-  3. `workspace_members`
-  4. `sources`
-  5. `facts`
-  6. `conflicts`
-  7. `evidence`
-  8. `findings`
-  9. `finding_evidence`
-  10. `decisions`
-  11. `actions`
-  12. `reports`
-  13. `activity_logs`
+- **Backend API & Server:** Node.js HTTP Server (`server/index.js`) on port 5000 serving:
+  - Real-time Health API (`/api/health`)
+  - Database Status Probe (`/api/database-status`)
+  - Workspaces & Documents Management (`/api/workspaces`, `/api/documents`)
+  - Complete Static SPA client application from `dist/` on port 5000
+- **Database & Storage:** Supabase PostgreSQL + Supabase Auth + Supabase Storage with strict Row-Level Security (RLS)
+- **Database Schema:** Located in [`supabase/schema.sql`](supabase/schema.sql) with 15 production tables, indexes, and RLS policies:
+  1. `organizations`
+  2. `organization_members`
+  3. `profiles`
+  4. `workspaces`
+  5. `documents`
+  6. `document_chunks`
+  7. `facts`
+  8. `evidence`
+  9. `contradictions`
+  10. `evidence_gaps`
+  11. `findings`
+  12. `decisions`
+  13. `actions`
+  14. `reports`
+  15. `activity_logs`
 - **PDF Generation:** `jspdf` client-side synthesis.
 - **Multilingual Support:** Auto-detection for English, Tamil (தமிழ்), Hindi (हिन्दी), Telugu (తెలుగు), Malayalam (മലയാളം), Kannada (ಕನ್ನಡ), Bengali (বাংলা), Marathi, Gujarati, Punjabi, Urdu.
 
@@ -82,10 +88,21 @@ To demo the complete **FIND → UNDERSTAND → ORGANIZE → VERIFY → DECIDE �
 # 1. Install dependencies
 npm install
 
-# 2. Start development server
+# 2. Start frontend dev server
 npm run dev
 # Running at http://127.0.0.1:5173/
 
-# 3. Build verification
+# 3. Start unified backend API server
+npm run backend
+# Running at http://127.0.0.1:5000/
+
+# 4. Production build verification
 npm run build
 ```
+
+---
+
+## 🔗 Official Repository
+
+- **GitHub:** [https://github.com/Kirankumar0706/Info_fusion-.git](https://github.com/Kirankumar0706/Info_fusion-)
+
