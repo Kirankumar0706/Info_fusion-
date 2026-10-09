@@ -1,31 +1,50 @@
 -- ====================================================================
--- INFOFUSION: ENTERPRISE SUPABASE MULTI-ORGANIZATION SCHEMA & RLS
+-- INFOFUSION: HARDENED ENTERPRISE DATABASE SCHEMA & RLS POLICIES
 -- "From scattered information to trusted decisions."
+-- 
+-- SECURITY AUDIT HIGHLIGHTS:
+-- 1. Strictly scopes access to authenticated users with valid organization/workspace membership.
+-- 2. Prevents self-escalation of roles to 'owner' or 'admin'.
+-- 3. Restricts document & storage access strictly to authorized workspace members.
+-- 4. Preserves all existing data (no DROP TABLE; uses ALTER TABLE ADD COLUMN IF NOT EXISTS).
+-- 5. Revokes dangerous unrestricted grants from the 'anon' public role.
+-- 6. Safe and idempotent (can be executed repeatedly in Supabase SQL Editor).
 -- ====================================================================
 
+-- --------------------------------------------------------------------
 -- 0. EXTENSIONS
+-- --------------------------------------------------------------------
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- ====================================================================
--- 1. ORGANIZATIONS & MEMBERSHIP
--- ====================================================================
-
+-- --------------------------------------------------------------------
+-- 1. ORGANIZATIONS & MEMBERSHIP (Preserving Existing Data)
+-- --------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.organizations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Ensure columns exist in case table was created with an earlier schema
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
 CREATE TABLE IF NOT EXISTS public.organization_members (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(organization_id, user_id)
+    PRIMARY KEY (organization_id, user_id)
 );
+
+-- Ensure backward-compatible optional id column if requested
+ALTER TABLE public.organization_members ADD COLUMN IF NOT EXISTS id UUID DEFAULT gen_random_uuid();
+ALTER TABLE public.organization_members ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'member';
+ALTER TABLE public.organization_members ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 
 -- Profiles table for user metadata
 CREATE TABLE IF NOT EXISTS public.profiles (
@@ -40,10 +59,9 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ====================================================================
--- 2. WORKSPACES
--- ====================================================================
-
+-- --------------------------------------------------------------------
+-- 2. WORKSPACES (Preserving Existing Data & Adding Missing Columns)
+-- --------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.workspaces (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
@@ -57,10 +75,19 @@ CREATE TABLE IF NOT EXISTS public.workspaces (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ====================================================================
--- 3. DOCUMENTS & CHUNKS
--- ====================================================================
+-- Align existing table with all expected workspace columns
+ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES public.organizations(id) ON DELETE CASCADE;
+ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS industry TEXT;
+ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS use_case TEXT;
+ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
+ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
+-- --------------------------------------------------------------------
+-- 3. DOCUMENTS & CHUNKS
+-- --------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
@@ -87,10 +114,9 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ====================================================================
+-- --------------------------------------------------------------------
 -- 4. FACTS & EVIDENCE
--- ====================================================================
-
+-- --------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.facts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
@@ -123,10 +149,9 @@ CREATE TABLE IF NOT EXISTS public.evidence (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ====================================================================
+-- --------------------------------------------------------------------
 -- 5. CONTRADICTIONS & EVIDENCE GAPS
--- ====================================================================
-
+-- --------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.contradictions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID REFERENCES public.organizations(id) ON DELETE CASCADE,
@@ -156,10 +181,9 @@ CREATE TABLE IF NOT EXISTS public.evidence_gaps (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ====================================================================
+-- --------------------------------------------------------------------
 -- 6. FINDINGS, DECISIONS & ACTIONS
--- ====================================================================
-
+-- --------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.findings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID REFERENCES public.organizations(id) ON DELETE CASCADE,
@@ -197,10 +221,9 @@ CREATE TABLE IF NOT EXISTS public.actions (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ====================================================================
+-- --------------------------------------------------------------------
 -- 7. REPORTS & ACTIVITY LOGS
--- ====================================================================
-
+-- --------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.reports (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID REFERENCES public.organizations(id) ON DELETE CASCADE,
@@ -223,20 +246,106 @@ CREATE TABLE IF NOT EXISTS public.activity_logs (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ====================================================================
--- 8. COMPATIBILITY VIEWS (for seamless frontend & backend interop)
--- ====================================================================
-
-CREATE OR REPLACE VIEW public.sources AS 
+-- --------------------------------------------------------------------
+-- 8. COMPATIBILITY VIEWS (Enforcing Caller's Row Level Security)
+-- --------------------------------------------------------------------
+CREATE OR REPLACE VIEW public.sources WITH (security_invoker = true) AS 
     SELECT * FROM public.documents;
 
-CREATE OR REPLACE VIEW public.conflicts AS 
+CREATE OR REPLACE VIEW public.conflicts WITH (security_invoker = true) AS 
     SELECT * FROM public.contradictions;
 
--- ====================================================================
--- 9. ROW LEVEL SECURITY (RLS) POLICIES
--- ====================================================================
+-- --------------------------------------------------------------------
+-- 9. HARDENED SECURITY HELPER FUNCTIONS
+-- --------------------------------------------------------------------
 
+-- Check if user is a member or creator of the organization
+CREATE OR REPLACE FUNCTION public.is_org_member(org_id UUID, u_id UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+    IF u_id IS NULL OR org_id IS NULL THEN
+        RETURN FALSE;
+    END IF;
+    RETURN EXISTS (
+        SELECT 1 FROM public.organization_members
+        WHERE organization_id = org_id AND user_id = u_id
+    ) OR EXISTS (
+        SELECT 1 FROM public.organizations
+        WHERE id = org_id AND created_by = u_id
+    );
+END;
+$$;
+
+-- Check if user is an owner or admin of the organization
+CREATE OR REPLACE FUNCTION public.is_org_admin_or_owner(org_id UUID, u_id UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+    IF u_id IS NULL OR org_id IS NULL THEN
+        RETURN FALSE;
+    END IF;
+    RETURN EXISTS (
+        SELECT 1 FROM public.organization_members
+        WHERE organization_id = org_id AND user_id = u_id AND role IN ('owner', 'admin')
+    ) OR EXISTS (
+        SELECT 1 FROM public.organizations
+        WHERE id = org_id AND created_by = u_id
+    );
+END;
+$$;
+
+-- Check if user is the direct owner of the organization
+CREATE OR REPLACE FUNCTION public.is_org_owner(org_id UUID, u_id UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+    IF u_id IS NULL OR org_id IS NULL THEN
+        RETURN FALSE;
+    END IF;
+    RETURN EXISTS (
+        SELECT 1 FROM public.organization_members
+        WHERE organization_id = org_id AND user_id = u_id AND role = 'owner'
+    ) OR EXISTS (
+        SELECT 1 FROM public.organizations
+        WHERE id = org_id AND created_by = u_id
+    );
+END;
+$$;
+
+-- Check if user is a member of the workspace (via its parent organization)
+CREATE OR REPLACE FUNCTION public.is_workspace_member(ws_id UUID, u_id UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_org_id UUID;
+BEGIN
+    IF ws_id IS NULL OR u_id IS NULL THEN
+        RETURN FALSE;
+    END IF;
+    SELECT organization_id INTO v_org_id FROM public.workspaces WHERE id = ws_id;
+    IF v_org_id IS NULL THEN
+        RETURN FALSE;
+    END IF;
+    RETURN public.is_org_member(v_org_id, u_id);
+END;
+$$;
+
+-- --------------------------------------------------------------------
+-- 10. ROW LEVEL SECURITY (RLS) ENABLEMENT ON ALL 15 TABLES
+-- --------------------------------------------------------------------
 ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.organization_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
@@ -253,148 +362,309 @@ ALTER TABLE public.actions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
 
--- Helper functions for RLS checks
-CREATE OR REPLACE FUNCTION public.is_org_member(org_id UUID, u_id UUID)
-RETURNS BOOLEAN AS $$
-BEGIN
-    RETURN EXISTS (
-        SELECT 1 FROM public.organization_members
-        WHERE organization_id = org_id AND user_id = u_id
-    ) OR EXISTS (
-        SELECT 1 FROM public.organizations
-        WHERE id = org_id AND created_by = u_id
-    );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- --------------------------------------------------------------------
+-- 11. GRANULAR, PRIVILEGE-ISOLATED POLICIES
+-- --------------------------------------------------------------------
 
-CREATE OR REPLACE FUNCTION public.is_workspace_member(ws_id UUID, u_id UUID)
-RETURNS BOOLEAN AS $$
-DECLARE
-    org_id UUID;
-BEGIN
-    SELECT organization_id INTO org_id FROM public.workspaces WHERE id = ws_id;
-    IF org_id IS NULL THEN
-        RETURN FALSE;
-    END IF;
-    RETURN public.is_org_member(org_id, u_id);
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Organization Policies
+-- ==================== ORGANIZATIONS ====================
+DROP POLICY IF EXISTS "Users can view their organizations" ON public.organizations;
 CREATE POLICY "Users can view their organizations" ON public.organizations
-    FOR SELECT USING (public.is_org_member(id, auth.uid()));
+    FOR SELECT TO authenticated
+    USING (public.is_org_member(id, auth.uid()));
 
+DROP POLICY IF EXISTS "Users can create organizations" ON public.organizations;
 CREATE POLICY "Users can create organizations" ON public.organizations
-    FOR INSERT WITH CHECK (auth.uid() = created_by);
+    FOR INSERT TO authenticated
+    WITH CHECK (auth.uid() = created_by);
 
+DROP POLICY IF EXISTS "Owners can update organization" ON public.organizations;
 CREATE POLICY "Owners can update organization" ON public.organizations
-    FOR UPDATE USING (auth.uid() = created_by);
+    FOR UPDATE TO authenticated
+    USING (public.is_org_owner(id, auth.uid()))
+    WITH CHECK (public.is_org_owner(id, auth.uid()));
 
--- Organization Members Policies
+DROP POLICY IF EXISTS "Owners can delete organization" ON public.organizations;
+CREATE POLICY "Owners can delete organization" ON public.organizations
+    FOR DELETE TO authenticated
+    USING (public.is_org_owner(id, auth.uid()));
+
+-- ==================== ORGANIZATION MEMBERS ====================
+-- 1. View: Members can see who else is in their organization
+DROP POLICY IF EXISTS "Members can view membership" ON public.organization_members;
 CREATE POLICY "Members can view membership" ON public.organization_members
-    FOR SELECT USING (public.is_org_member(organization_id, auth.uid()));
+    FOR SELECT TO authenticated
+    USING (public.is_org_member(organization_id, auth.uid()));
 
-CREATE POLICY "Owners can insert membership" ON public.organization_members
-    FOR INSERT WITH CHECK (public.is_org_member(organization_id, auth.uid()));
+-- 2. Insert:
+--    A. Organization creator joining as initial 'owner'
+--    B. Existing admin/owner inviting members (preventing self-promotion by non-admins)
+DROP POLICY IF EXISTS "Owners can insert membership" ON public.organization_members;
+DROP POLICY IF EXISTS "Admins can add members" ON public.organization_members;
+CREATE POLICY "Admins can add members" ON public.organization_members
+    FOR INSERT TO authenticated
+    WITH CHECK (
+        -- Case A: Creator bootstrapping initial owner membership
+        (
+            user_id = auth.uid() AND
+            role = 'owner' AND
+            EXISTS (SELECT 1 FROM public.organizations o WHERE o.id = organization_id AND o.created_by = auth.uid())
+        )
+        OR
+        -- Case B: Existing Owner adding any role
+        (
+            public.is_org_owner(organization_id, auth.uid())
+        )
+        OR
+        -- Case C: Existing Admin adding non-owner roles only
+        (
+            public.is_org_admin_or_owner(organization_id, auth.uid()) AND
+            role IN ('admin', 'member', 'viewer')
+        )
+    );
 
--- Profiles Policies
-CREATE POLICY "Users can view own profile" ON public.profiles
-    FOR SELECT USING (auth.uid() = id);
+-- 3. Update: Only owners or admins can modify roles (cannot modify self to prevent rogue lock-in)
+DROP POLICY IF EXISTS "Admins can update member roles" ON public.organization_members;
+CREATE POLICY "Admins can update member roles" ON public.organization_members
+    FOR UPDATE TO authenticated
+    USING (
+        public.is_org_admin_or_owner(organization_id, auth.uid()) AND
+        user_id != auth.uid()
+    )
+    WITH CHECK (
+        -- Only owners can promote someone to owner
+        (role = 'owner' AND public.is_org_owner(organization_id, auth.uid()))
+        OR
+        (role IN ('admin', 'member', 'viewer') AND public.is_org_admin_or_owner(organization_id, auth.uid()))
+    );
 
-CREATE POLICY "Users can update own profile" ON public.profiles
-    FOR UPDATE USING (auth.uid() = id);
+-- 4. Delete: Admins/owners can remove members, or a user can leave the organization
+DROP POLICY IF EXISTS "Admins can remove members or user can leave" ON public.organization_members;
+CREATE POLICY "Admins can remove members or user can leave" ON public.organization_members
+    FOR DELETE TO authenticated
+    USING (
+        user_id = auth.uid() OR
+        public.is_org_admin_or_owner(organization_id, auth.uid())
+    );
 
+-- ==================== PROFILES ====================
+DROP POLICY IF EXISTS "Users can view profiles in their organizations" ON public.profiles;
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
+CREATE POLICY "Users can view profiles in their organizations" ON public.profiles
+    FOR SELECT TO authenticated
+    USING (
+        id = auth.uid() OR
+        EXISTS (
+            SELECT 1 FROM public.organization_members m1
+            JOIN public.organization_members m2 ON m1.organization_id = m2.organization_id
+            WHERE m1.user_id = auth.uid() AND m2.user_id = profiles.id
+        )
+    );
+
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
 CREATE POLICY "Users can insert own profile" ON public.profiles
-    FOR INSERT WITH CHECK (auth.uid() = id);
+    FOR INSERT TO authenticated
+    WITH CHECK (auth.uid() = id);
 
--- Workspace Policies
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+CREATE POLICY "Users can update own profile" ON public.profiles
+    FOR UPDATE TO authenticated
+    USING (auth.uid() = id)
+    WITH CHECK (auth.uid() = id);
+
+-- ==================== WORKSPACES ====================
+DROP POLICY IF EXISTS "Members can view workspaces" ON public.workspaces;
 CREATE POLICY "Members can view workspaces" ON public.workspaces
-    FOR SELECT USING (public.is_org_member(organization_id, auth.uid()));
+    FOR SELECT TO authenticated
+    USING (public.is_org_member(organization_id, auth.uid()));
 
+DROP POLICY IF EXISTS "Members can create workspaces" ON public.workspaces;
 CREATE POLICY "Members can create workspaces" ON public.workspaces
-    FOR INSERT WITH CHECK (public.is_org_member(organization_id, auth.uid()));
+    FOR INSERT TO authenticated
+    WITH CHECK (
+        public.is_org_member(organization_id, auth.uid()) AND
+        (created_by IS NULL OR created_by = auth.uid())
+    );
 
+DROP POLICY IF EXISTS "Members can update workspaces" ON public.workspaces;
 CREATE POLICY "Members can update workspaces" ON public.workspaces
-    FOR UPDATE USING (public.is_org_member(organization_id, auth.uid()));
+    FOR UPDATE TO authenticated
+    USING (
+        public.is_org_member(organization_id, auth.uid()) AND
+        (created_by = auth.uid() OR public.is_org_admin_or_owner(organization_id, auth.uid()))
+    )
+    WITH CHECK (
+        public.is_org_member(organization_id, auth.uid())
+    );
 
+DROP POLICY IF EXISTS "Members can delete workspaces" ON public.workspaces;
 CREATE POLICY "Members can delete workspaces" ON public.workspaces
-    FOR DELETE USING (public.is_org_member(organization_id, auth.uid()));
+    FOR DELETE TO authenticated
+    USING (
+        created_by = auth.uid() OR
+        public.is_org_admin_or_owner(organization_id, auth.uid())
+    );
 
--- Documents Policies
-CREATE POLICY "Manage documents" ON public.documents
-    FOR ALL USING (public.is_workspace_member(workspace_id, auth.uid()));
+-- ==================== DOCUMENTS ====================
+DROP POLICY IF EXISTS "Manage documents" ON public.documents;
+DROP POLICY IF EXISTS "Members can view documents" ON public.documents;
+CREATE POLICY "Members can view documents" ON public.documents
+    FOR SELECT TO authenticated
+    USING (public.is_workspace_member(workspace_id, auth.uid()));
 
-CREATE POLICY "Manage chunks" ON public.document_chunks
-    FOR ALL USING (public.is_workspace_member(workspace_id, auth.uid()));
+DROP POLICY IF EXISTS "Members can insert documents" ON public.documents;
+CREATE POLICY "Members can insert documents" ON public.documents
+    FOR INSERT TO authenticated
+    WITH CHECK (
+        public.is_workspace_member(workspace_id, auth.uid()) AND
+        (uploaded_by IS NULL OR uploaded_by = auth.uid())
+    );
 
--- Facts Policies
+DROP POLICY IF EXISTS "Uploader or admin can update documents" ON public.documents;
+CREATE POLICY "Uploader or admin can update documents" ON public.documents
+    FOR UPDATE TO authenticated
+    USING (
+        public.is_workspace_member(workspace_id, auth.uid()) AND
+        (uploaded_by = auth.uid() OR public.is_org_admin_or_owner(organization_id, auth.uid()))
+    );
+
+DROP POLICY IF EXISTS "Uploader or admin can delete documents" ON public.documents;
+CREATE POLICY "Uploader or admin can delete documents" ON public.documents
+    FOR DELETE TO authenticated
+    USING (
+        public.is_workspace_member(workspace_id, auth.uid()) AND
+        (uploaded_by = auth.uid() OR public.is_org_admin_or_owner(organization_id, auth.uid()))
+    );
+
+-- ==================== DOCUMENT CHUNKS ====================
+DROP POLICY IF EXISTS "Manage chunks" ON public.document_chunks;
+DROP POLICY IF EXISTS "Members can view chunks" ON public.document_chunks;
+CREATE POLICY "Members can view chunks" ON public.document_chunks
+    FOR SELECT TO authenticated
+    USING (public.is_workspace_member(workspace_id, auth.uid()));
+
+DROP POLICY IF EXISTS "Members can insert chunks" ON public.document_chunks;
+CREATE POLICY "Members can insert chunks" ON public.document_chunks
+    FOR INSERT TO authenticated
+    WITH CHECK (public.is_workspace_member(workspace_id, auth.uid()));
+
+DROP POLICY IF EXISTS "Members can delete chunks" ON public.document_chunks;
+CREATE POLICY "Members can delete chunks" ON public.document_chunks
+    FOR DELETE TO authenticated
+    USING (public.is_workspace_member(workspace_id, auth.uid()));
+
+-- ==================== FACTS & EVIDENCE ====================
+DROP POLICY IF EXISTS "Manage facts" ON public.facts;
 CREATE POLICY "Manage facts" ON public.facts
-    FOR ALL USING (public.is_workspace_member(workspace_id, auth.uid()));
+    FOR ALL TO authenticated
+    USING (public.is_workspace_member(workspace_id, auth.uid()))
+    WITH CHECK (public.is_workspace_member(workspace_id, auth.uid()));
 
--- Evidence Policies
+DROP POLICY IF EXISTS "Manage evidence" ON public.evidence;
 CREATE POLICY "Manage evidence" ON public.evidence
-    FOR ALL USING (public.is_workspace_member(workspace_id, auth.uid()));
+    FOR ALL TO authenticated
+    USING (public.is_workspace_member(workspace_id, auth.uid()))
+    WITH CHECK (public.is_workspace_member(workspace_id, auth.uid()));
 
--- Contradictions Policies
+-- ==================== CONTRADICTIONS & EVIDENCE GAPS ====================
+DROP POLICY IF EXISTS "Manage contradictions" ON public.contradictions;
 CREATE POLICY "Manage contradictions" ON public.contradictions
-    FOR ALL USING (public.is_workspace_member(workspace_id, auth.uid()));
+    FOR ALL TO authenticated
+    USING (public.is_workspace_member(workspace_id, auth.uid()))
+    WITH CHECK (public.is_workspace_member(workspace_id, auth.uid()));
 
--- Evidence Gaps Policies
+DROP POLICY IF EXISTS "Manage evidence gaps" ON public.evidence_gaps;
 CREATE POLICY "Manage evidence gaps" ON public.evidence_gaps
-    FOR ALL USING (public.is_workspace_member(workspace_id, auth.uid()));
+    FOR ALL TO authenticated
+    USING (public.is_workspace_member(workspace_id, auth.uid()))
+    WITH CHECK (public.is_workspace_member(workspace_id, auth.uid()));
 
--- Findings Policies
+-- ==================== FINDINGS, DECISIONS & ACTIONS ====================
+DROP POLICY IF EXISTS "Manage findings" ON public.findings;
 CREATE POLICY "Manage findings" ON public.findings
-    FOR ALL USING (public.is_workspace_member(workspace_id, auth.uid()));
+    FOR ALL TO authenticated
+    USING (public.is_workspace_member(workspace_id, auth.uid()))
+    WITH CHECK (public.is_workspace_member(workspace_id, auth.uid()));
 
--- Decisions Policies
+DROP POLICY IF EXISTS "Manage decisions" ON public.decisions;
 CREATE POLICY "Manage decisions" ON public.decisions
-    FOR ALL USING (public.is_workspace_member(workspace_id, auth.uid()));
+    FOR ALL TO authenticated
+    USING (public.is_workspace_member(workspace_id, auth.uid()))
+    WITH CHECK (public.is_workspace_member(workspace_id, auth.uid()));
 
--- Actions Policies
+DROP POLICY IF EXISTS "Manage actions" ON public.actions;
 CREATE POLICY "Manage actions" ON public.actions
-    FOR ALL USING (public.is_workspace_member(workspace_id, auth.uid()));
+    FOR ALL TO authenticated
+    USING (public.is_workspace_member(workspace_id, auth.uid()))
+    WITH CHECK (public.is_workspace_member(workspace_id, auth.uid()));
 
--- Reports Policies
+-- ==================== REPORTS & ACTIVITY LOGS ====================
+DROP POLICY IF EXISTS "Manage reports" ON public.reports;
 CREATE POLICY "Manage reports" ON public.reports
-    FOR ALL USING (public.is_workspace_member(workspace_id, auth.uid()));
+    FOR ALL TO authenticated
+    USING (public.is_workspace_member(workspace_id, auth.uid()))
+    WITH CHECK (public.is_workspace_member(workspace_id, auth.uid()));
 
--- Activity Logs Policies
+DROP POLICY IF EXISTS "Manage activity logs" ON public.activity_logs;
 CREATE POLICY "Manage activity logs" ON public.activity_logs
-    FOR ALL USING (public.is_workspace_member(workspace_id, auth.uid()));
+    FOR ALL TO authenticated
+    USING (public.is_workspace_member(workspace_id, auth.uid()))
+    WITH CHECK (public.is_workspace_member(workspace_id, auth.uid()));
 
--- ====================================================================
--- 10. STORAGE BUCKET CONFIGURATION
--- ====================================================================
-
--- Ensure the workspace-documents bucket exists in Supabase Storage
+-- --------------------------------------------------------------------
+-- 12. STORAGE BUCKET CONFIGURATION & ISOLATION
+-- --------------------------------------------------------------------
+-- Ensure storage bucket exists
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('workspace-documents', 'workspace-documents', false)
 ON CONFLICT (id) DO NOTHING;
 
+-- Helper to safely extract workspace_id from storage path "workspaces/<ws_id>/<filename>"
+CREATE OR REPLACE FUNCTION public.storage_extract_workspace_id(name TEXT)
+RETURNS UUID
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+    parts TEXT[];
+BEGIN
+    parts := string_to_array(name, '/');
+    IF array_length(parts, 1) >= 2 AND parts[1] = 'workspaces' THEN
+        RETURN parts[2]::uuid;
+    END IF;
+    RETURN NULL;
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$;
+
 -- Storage RLS policies for documents bucket
+DROP POLICY IF EXISTS "Workspace members can upload documents" ON storage.objects;
 CREATE POLICY "Workspace members can upload documents" ON storage.objects
-    FOR INSERT WITH CHECK (
+    FOR INSERT TO authenticated
+    WITH CHECK (
         bucket_id = 'workspace-documents' AND
-        auth.role() = 'authenticated'
+        public.is_workspace_member(public.storage_extract_workspace_id(name), auth.uid())
     );
 
+DROP POLICY IF EXISTS "Workspace members can read documents" ON storage.objects;
 CREATE POLICY "Workspace members can read documents" ON storage.objects
-    FOR SELECT USING (
+    FOR SELECT TO authenticated
+    USING (
         bucket_id = 'workspace-documents' AND
-        auth.role() = 'authenticated'
+        public.is_workspace_member(public.storage_extract_workspace_id(name), auth.uid())
     );
 
+DROP POLICY IF EXISTS "Workspace members can delete documents" ON storage.objects;
 CREATE POLICY "Workspace members can delete documents" ON storage.objects
-    FOR DELETE USING (
+    FOR DELETE TO authenticated
+    USING (
         bucket_id = 'workspace-documents' AND
-        auth.role() = 'authenticated'
+        public.is_workspace_member(public.storage_extract_workspace_id(name), auth.uid())
     );
 
--- ====================================================================
--- 11. INDEXES FOR HIGH-PERFORMANCE INTELLIGENCE QUERIES
--- ====================================================================
-
+-- --------------------------------------------------------------------
+-- 13. INDEXES FOR HIGH-PERFORMANCE INTELLIGENCE QUERIES
+-- --------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_workspaces_org ON public.workspaces(organization_id);
 CREATE INDEX IF NOT EXISTS idx_documents_ws ON public.documents(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc ON public.document_chunks(document_id);
@@ -409,16 +679,25 @@ CREATE INDEX IF NOT EXISTS idx_actions_ws ON public.actions(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_reports_ws ON public.reports(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_activity_ws ON public.activity_logs(workspace_id);
 
--- ====================================================================
--- 12. SCHEMA GRANTS FOR POSTGREST (ANON & AUTHENTICATED ROLES)
--- ====================================================================
+-- --------------------------------------------------------------------
+-- 14. PRINCIPLE OF LEAST PRIVILEGE SCHEMA GRANTS
+-- --------------------------------------------------------------------
 
-GRANT USAGE ON SCHEMA public TO anon, authenticated;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
-GRANT ALL ON ALL ROUTINES IN SCHEMA public TO anon, authenticated;
+-- 1. Revoke dangerous unrestricted access from public / anon
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon;
+REVOKE ALL ON ALL ROUTINES IN SCHEMA public FROM anon;
 
--- Ensure future tables also inherit these permissions
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ROUTINES TO anon, authenticated;
+-- 2. Allow anon only schema lookup (no direct table access without auth)
+GRANT USAGE ON SCHEMA public TO anon;
+
+-- 3. Grant authenticated users CRUD permissions (subject to RLS enforcement)
+GRANT USAGE ON SCHEMA public TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+GRANT EXECUTE ON ALL ROUTINES IN SCHEMA public TO authenticated;
+
+-- 4. Default privileges for future tables
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON ROUTINES TO authenticated;
