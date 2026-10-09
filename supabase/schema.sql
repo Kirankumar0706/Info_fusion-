@@ -680,24 +680,18 @@ CREATE INDEX IF NOT EXISTS idx_reports_ws ON public.reports(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_activity_ws ON public.activity_logs(workspace_id);
 
 -- --------------------------------------------------------------------
--- 14. PRINCIPLE OF LEAST PRIVILEGE SCHEMA GRANTS
+-- 14. SCHEMA GRANTS FOR SUPABASE POSTGREST API (PROTECTED BY RLS)
 -- --------------------------------------------------------------------
 
--- 1. Revoke dangerous unrestricted access from public / anon
-REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;
-REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon;
-REVOKE ALL ON ALL ROUTINES IN SCHEMA public FROM anon;
+-- PostgREST routes requests through the 'anon' and 'authenticated' roles.
+-- Table-level grants permit PostgREST to route requests to the tables; Row Level Security (RLS)
+-- strictly controls row-by-row authorization and multi-tenant data isolation.
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL ROUTINES IN SCHEMA public TO anon, authenticated;
 
--- 2. Allow anon only schema lookup (no direct table access without auth)
-GRANT USAGE ON SCHEMA public TO anon;
-
--- 3. Grant authenticated users CRUD permissions (subject to RLS enforcement)
-GRANT USAGE ON SCHEMA public TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
-GRANT EXECUTE ON ALL ROUTINES IN SCHEMA public TO authenticated;
-
--- 4. Default privileges for future tables
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO authenticated;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO authenticated;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON ROUTINES TO authenticated;
+-- Ensure future tables also inherit these permissions
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ROUTINES TO anon, authenticated;

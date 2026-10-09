@@ -249,14 +249,23 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
+      const accessibleCount = Object.values(tableReport).filter(t => t.status === 'accessible').length;
+      const permissionDeniedCount = Object.values(tableReport).filter(t => t.status === 'exists_permission_denied').length;
       const existingCount = Object.values(tableReport).filter(t => t.status === 'accessible' || t.status === 'exists_permission_denied').length;
       const missingCount = Object.values(tableReport).filter(t => t.status === 'missing_from_schema_cache').length;
 
       return sendJson(res, 200, {
         supabaseUrl,
+        allTablesCreated: missingCount === 0,
         existingCount,
+        accessibleCount,
+        permissionDeniedCount,
         missingCount,
         totalChecked: requiredTables.length,
+        status: accessibleCount === requiredTables.length ? 'ALL_ACCESSIBLE' : (permissionDeniedCount > 0 ? 'NEEDS_POSTGREST_GRANT' : 'MISSING_TABLES'),
+        quickFixSql: permissionDeniedCount > 0 
+          ? "GRANT USAGE ON SCHEMA public TO anon, authenticated; GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated; GRANT ALL ON ALL ROUTINES IN SCHEMA public TO anon, authenticated;"
+          : null,
         tables: tableReport,
       });
     }
