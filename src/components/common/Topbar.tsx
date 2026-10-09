@@ -34,6 +34,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onToggleSidebar, onOpenUploadMod
     authHealthy: boolean;
     tablesCreated: boolean;
   }>({ connected: true, authHealthy: true, tablesCreated: false });
+  const [backendServerOnline, setBackendServerOnline] = useState(true);
 
   const navigate = useNavigate();
 
@@ -41,6 +42,10 @@ export const Topbar: React.FC<TopbarProps> = ({ onToggleSidebar, onOpenUploadMod
     testSupabaseConnection().then(res => {
       setSupabaseStatus(res);
     });
+    fetch('/api/health')
+      .then(r => r.ok)
+      .then(ok => setBackendServerOnline(ok))
+      .catch(() => setBackendServerOnline(false));
   }, []);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -240,16 +245,30 @@ export const Topbar: React.FC<TopbarProps> = ({ onToggleSidebar, onOpenUploadMod
 
             <div className="space-y-3 text-xs">
               <div className="p-3 rounded-xl bg-surface-100 border border-white/[0.06] space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono text-slate-400 uppercase">Backend API Server (Local Node.js)</span>
+                  <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
+                    backendServerOnline ? 'bg-emerald-500/20 text-emerald-300' : 'bg-red-500/20 text-red-300'
+                  }`}>
+                    {backendServerOnline ? 'PORT 5000 • ONLINE' : 'OFFLINE'}
+                  </span>
+                </div>
+                <div className="font-mono text-slate-300 font-semibold break-all text-[11px]">
+                  http://127.0.0.1:5000/api/health
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-surface-100 border border-white/[0.06] space-y-1">
                 <span className="text-[10px] font-mono text-slate-400 uppercase">Live Supabase Project URL</span>
                 <div className="font-mono text-emerald-300 font-semibold break-all">
-                  https://nnnogyufymzlpsgblrda.supabase.co
+                  {supabaseUrl}
                 </div>
               </div>
 
               <div className="p-3 rounded-xl bg-surface-100 border border-white/[0.06] space-y-1">
                 <span className="text-[10px] font-mono text-slate-400 uppercase">Project Reference ID</span>
                 <div className="font-mono text-white font-semibold">
-                  nnnogyufymzlpsgblrda
+                  {supabaseProjectId}
                 </div>
               </div>
 
