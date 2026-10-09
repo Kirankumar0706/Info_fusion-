@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { User, Session } from '@supabase/supabase-js';
 import { Profile, Organization } from '../types';
 import { organizationService } from '../services/organizations';
+import { generateId } from '../lib/uuid';
 
 interface SignUpData {
   fullName: string;
@@ -45,7 +46,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (saved) return JSON.parse(saved);
     } catch {}
     return {
-      id: 'usr-default',
+      id: '00000000-0000-4000-a000-000000000001',
       full_name: 'Lead Evaluator',
       email: 'evaluator@enterprise.org',
       organization: 'Enterprise Organization',
@@ -247,7 +248,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Update profile
         setProfile({
-          id: newUser?.id || `usr-${Date.now()}`,
+          id: newUser?.id || generateId(),
           email,
           full_name: data.fullName.trim(),
           organization: data.organizationName.trim(),
@@ -279,7 +280,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setOrganizations(prev => [org, ...prev]);
     setCurrentOrganization(org);
     setProfile({
-      id: `usr-${Date.now()}`,
+      id: generateId(),
       email,
       full_name: data.fullName,
       organization: data.organizationName,
@@ -305,7 +306,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     // Instant demo session
     const demoProfile: Profile = {
-      id: 'demo-analyst-uuid',
+      id: '00000000-0000-4000-a000-000000000002',
       full_name: 'Demo Evaluator',
       email: 'evaluator@infofusion.ai',
       organization: 'Apex Global Enterprises',

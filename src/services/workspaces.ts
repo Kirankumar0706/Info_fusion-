@@ -100,16 +100,17 @@ export const workspaceService = {
     if (supabase) {
       (async () => {
         try {
-          await supabase.from('workspaces').insert({
+          const payload: any = {
             id: newWsId,
-            organization_id: isUUID(data.organization_id) ? data.organization_id : undefined,
             name: newWs.name,
-            description: newWs.description,
-            industry: newWs.industry,
-            use_case: newWs.use_case,
-            created_by: isUUID(data.owner_id) ? data.owner_id : null,
-            status: 'active',
-          });
+          };
+          if (isUUID(data.organization_id)) payload.organization_id = data.organization_id;
+          if (isUUID(data.owner_id)) payload.created_by = data.owner_id;
+
+          const { error } = await supabase.from('workspaces').insert(payload);
+          if (error) {
+            console.warn('Supabase workspace sync note:', error.message);
+          }
         } catch (err) {
           console.warn('Supabase createWorkspace sync notice:', err);
         }

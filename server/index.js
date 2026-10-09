@@ -14,6 +14,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
+// UUID validation helper
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function isUUID(val) {
+  return typeof val === 'string' && UUID_REGEX.test(val);
+}
+
 // Load environment variables from .env.local and .env
 function loadEnv() {
   const envFiles = ['.env.local', '.env'];
@@ -46,19 +52,64 @@ function loadEnv() {
 
 const env = loadEnv();
 const supabaseUrl = (process.env.VITE_SUPABASE_URL || env.VITE_SUPABASE_URL || 'https://ysotsjbcoovxbqpshmat.supabase.co').replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
-const supabaseAnonKey = (process.env.VITE_SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlzb3RzamJjb292eGJxcHNobWF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE0OTAwODAsImV4cCI6MjEwNzA2NjA4MH0.roBQV9ZPX8wQPb28v4nzes_JBvDpSIenihD5xZGLtmI').trim();
+const supabaseAnonKey = (process.env.VITE_SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || '').trim();
 
-// Initialize Supabase Client
-const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+// Base public client (anon role)
+const baseSupabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: false,
     autoRefreshToken: false,
   }
 });
 
+/**
+ * Returns a user-scoped Supabase client when an Authorization header is present,
+ * ensuring PostgREST evaluates Row Level Security (RLS) under the user's identity.
+ */
+function getSupabaseClient(req) {
+  const authHeader = req.headers['authorization'];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: {
+          Authorization: authHeader,
+        }
+      },
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      }
+    });
+  }
+  return baseSupabase;
+}
+
+/**
+ * Verifies the incoming Bearer token and returns the authenticated user object.
+ * Returns null if token is missing or invalid.
+ */
+async function getAuthenticatedUser(req) {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+  const token = authHeader.slice(7).trim();
+  if (!token) return null;
+
+  try {
+    const { data: { user }, error } = await baseSupabase.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch {
+    return null;
+  }
+}
+
 const PORT = process.env.PORT || 5000;
 
-// Helper: send JSON response
+// Helper: send JSON response with CORS headers
 function sendJson(res, statusCode, data) {
   res.writeHead(statusCode, {
     'Content-Type': 'application/json',
@@ -101,9 +152,12 @@ const server = http.createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
+  const client = getSupabaseClient(req);
 
   try {
+    // =========================================================================
     // 1. Health check endpoint
+    // =========================================================================
     if (pathname === '/api/health' && req.method === 'GET') {
       let authHealthy = false;
       try {
@@ -127,77 +181,222 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // 2. Comprehensive Status Endpoint
-    if (pathname === '/api/status' && req.method === 'GET') {
-      let tablesStatus = { workspaces: false, organizations: false, documents: false };
-      try {
-        const { error: wsErr } = await supabase.from('workspaces').select('id').limit(1);
-        tablesStatus.workspaces = !wsErr || wsErr.code === '42501';
-
-        const { error: orgErr } = await supabase.from('organizations').select('id').limit(1);
-        tablesStatus.organizations = !orgErr || orgErr.code === '42501';
-
-        const { error: docErr } = await supabase.from('documents').select('id').limit(1);
-        tablesStatus.documents = !docErr || docErr.code === '42501';
-      } catch (e) {
-        console.warn('Status check warning:', e.message);
+    // =========================================================================
+    // 2. Auth verification endpoint
+    // =========================================================================
+    if (pathname === '/api/auth/verify' && req.method === 'POST') {
+      const user = await getAuthenticatedUser(req);
+      if (!user) {
+        return sendJson(res, 401, {
+          authenticated: false,
+          error: 'Invalid or missing Bearer token'
+        });
       }
-
       return sendJson(res, 200, {
-        backendServer: 'online',
-        port: PORT,
-        supabaseUrl,
-        tables: tablesStatus,
-        mode: 'connected'
+        authenticated: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+        }
       });
     }
 
-    // 3. Workspaces API
+    // =========================================================================
+    // 3. Database Schema Status & Integrity Check
+    // =========================================================================
+    if (pathname === '/api/database-status' && req.method === 'GET') {
+      const requiredTables = [
+        'organizations',
+        'organization_members',
+        'profiles',
+        'workspaces',
+        'documents',
+        'document_chunks',
+        'facts',
+        'evidence',
+        'contradictions',
+        'evidence_gaps',
+        'findings',
+        'decisions',
+        'actions',
+        'reports',
+        'activity_logs'
+      ];
+
+      const tableReport = {};
+      for (const table of requiredTables) {
+        try {
+          const resProbe = await fetch(`${supabaseUrl}/rest/v1/${table}?limit=1`, {
+            headers: {
+              apikey: supabaseAnonKey,
+              Authorization: `Bearer ${supabaseAnonKey}`,
+            }
+          });
+          const data = await resProbe.json();
+
+          if (resProbe.ok) {
+            tableReport[table] = { status: 'accessible', httpStatus: resProbe.status };
+          } else if (data.code === '42501') {
+            tableReport[table] = { status: 'exists_permission_denied', code: '42501', hint: data.hint || 'Table exists in PostgreSQL; requires GRANT or RLS authentication' };
+          } else if (data.code === 'PGRST205') {
+            tableReport[table] = { status: 'missing_from_schema_cache', code: 'PGRST205', error: data.message };
+          } else {
+            tableReport[table] = { status: 'error', httpStatus: resProbe.status, code: data.code, error: data.message };
+          }
+        } catch (err) {
+          tableReport[table] = { status: 'network_error', error: err.message };
+        }
+      }
+
+      const existingCount = Object.values(tableReport).filter(t => t.status === 'accessible' || t.status === 'exists_permission_denied').length;
+      const missingCount = Object.values(tableReport).filter(t => t.status === 'missing_from_schema_cache').length;
+
+      return sendJson(res, 200, {
+        supabaseUrl,
+        existingCount,
+        missingCount,
+        totalChecked: requiredTables.length,
+        tables: tableReport,
+      });
+    }
+
+    // =========================================================================
+    // 4. Workspaces API
+    // =========================================================================
     if (pathname === '/api/workspaces' && req.method === 'GET') {
       const orgId = url.searchParams.get('org_id');
-      let query = supabase.from('workspaces').select('*').order('created_at', { ascending: false });
-      if (orgId) {
+      let query = client.from('workspaces').select('*').order('created_at', { ascending: false });
+      if (orgId && isUUID(orgId)) {
         query = query.eq('organization_id', orgId);
       }
 
       const { data, error } = await query;
       if (error) {
-        return sendJson(res, 200, { source: 'supabase_fallback', data: [], message: error.message });
+        return sendJson(res, 200, {
+          source: 'supabase',
+          status: 'error',
+          code: error.code,
+          message: error.message,
+          data: []
+        });
       }
-      return sendJson(res, 200, { source: 'supabase', data: data || [] });
+      return sendJson(res, 200, { source: 'supabase', status: 'success', data: data || [] });
     }
 
     if (pathname === '/api/workspaces' && req.method === 'POST') {
       const body = await parseBody(req);
-      const { data, error } = await supabase.from('workspaces').insert({
-        id: body.id,
-        name: body.name,
-        organization_id: body.organization_id,
-        description: body.description,
-        industry: body.industry,
-        use_case: body.use_case,
-        status: body.status || 'active',
-      }).select().single();
-
-      if (error) {
-        return sendJson(res, 400, { error: error.message });
+      if (!body.name || typeof body.name !== 'string') {
+        return sendJson(res, 400, { error: 'Workspace name is required' });
       }
-      return sendJson(res, 201, { data });
+
+      const authUser = await getAuthenticatedUser(req);
+      const creatorId = authUser?.id || (isUUID(body.created_by) ? body.created_by : null);
+
+      // 1. Try full schema payload first
+      const fullPayload = {
+        name: body.name.trim(),
+        description: body.description || '',
+        industry: body.industry || null,
+        use_case: body.use_case || null,
+        status: body.status || 'active',
+      };
+      if (isUUID(body.id)) fullPayload.id = body.id;
+      if (isUUID(body.organization_id)) fullPayload.organization_id = body.organization_id;
+      if (creatorId) fullPayload.created_by = creatorId;
+
+      let insertRes = await client.from('workspaces').insert(fullPayload).select().single();
+
+      // 2. If 'description' or another column is missing in remote table (PGRST204),
+      // adapt automatically to the remote table's verified column set
+      if (insertRes.error && insertRes.error.code === 'PGRST204') {
+        const minimalPayload = {
+          name: body.name.trim(),
+        };
+        if (isUUID(body.id)) minimalPayload.id = body.id;
+        if (isUUID(body.organization_id)) minimalPayload.organization_id = body.organization_id;
+        if (creatorId) minimalPayload.created_by = creatorId;
+
+        insertRes = await client.from('workspaces').insert(minimalPayload).select().single();
+      }
+
+      if (insertRes.error) {
+        return sendJson(res, 400, {
+          error: insertRes.error.message,
+          code: insertRes.error.code,
+          hint: insertRes.error.hint || null,
+          details: insertRes.error.details || null
+        });
+      }
+
+      return sendJson(res, 201, { data: insertRes.data });
     }
 
-    // 4. Default 404 for unknown routes
+    // Delete workspace endpoint
+    if (pathname.startsWith('/api/workspaces/') && req.method === 'DELETE') {
+      const wsId = pathname.slice('/api/workspaces/'.length);
+      if (!isUUID(wsId)) {
+        return sendJson(res, 400, { error: 'Invalid workspace UUID' });
+      }
+
+      const { error } = await client.from('workspaces').delete().eq('id', wsId);
+      if (error) {
+        return sendJson(res, 400, { error: error.message, code: error.code });
+      }
+      return sendJson(res, 200, { success: true, deletedId: wsId });
+    }
+
+    // =========================================================================
+    // 5. Protected Documents API
+    // =========================================================================
+    if (pathname === '/api/documents' && req.method === 'GET') {
+      const wsId = url.searchParams.get('workspace_id');
+      if (!wsId || !isUUID(wsId)) {
+        return sendJson(res, 400, { error: 'Valid workspace_id is required' });
+      }
+
+      const { data, error } = await client
+        .from('documents')
+        .select('*')
+        .eq('workspace_id', wsId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        return sendJson(res, 200, {
+          source: 'supabase',
+          status: 'error',
+          code: error.code,
+          message: error.message,
+          data: []
+        });
+      }
+      return sendJson(res, 200, { source: 'supabase', status: 'success', data: data || [] });
+    }
+
+    // =========================================================================
+    // 6. Default 404 for unknown routes
+    // =========================================================================
     return sendJson(res, 404, { error: 'Not Found', path: pathname });
   } catch (err) {
-    console.error('API Error:', err);
+    console.error('API Server Error:', err.message);
     return sendJson(res, 500, { error: 'Internal Server Error', message: err.message });
+  }
+});
+
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') {
+    console.log(`Port ${PORT} is in use; server is already running.`);
+  } else {
+    console.error('Server error:', e);
   }
 });
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log('========================================================');
   console.log(`🚀 InfoFusion Backend Server is running!`);
-  console.log(`📡 Local API: http://127.0.0.1:${PORT}`);
-  console.log(`⚡ Supabase:  ${supabaseUrl}`);
-  console.log(`✨ Health:    http://127.0.0.1:${PORT}/api/health`);
+  console.log(`📡 Local API:     http://127.0.0.1:${PORT}`);
+  console.log(`⚡ Supabase:      ${supabaseUrl}`);
+  console.log(`✨ Health:        http://127.0.0.1:${PORT}/api/health`);
+  console.log(`📊 DB Status:     http://127.0.0.1:${PORT}/api/database-status`);
   console.log('========================================================');
 });

@@ -73,7 +73,6 @@ export const organizationService = {
           const org = data as Organization;
           if (validUserId) {
             await supabase.from('organization_members').insert({
-              id: generateId(),
               organization_id: org.id,
               user_id: validUserId,
               role: 'owner',
