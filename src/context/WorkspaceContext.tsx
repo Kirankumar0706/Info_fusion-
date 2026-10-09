@@ -9,6 +9,7 @@ import {
   reportService, activityService 
 } from '../services';
 import { processWorkspaceAnalysis, createGenericTestDocuments } from '../lib/genericExtractor';
+import { extractDocumentContent } from '../lib/documentParser';
 import { useAuth } from './AuthContext';
 
 interface CreateWorkspaceInput {
@@ -317,6 +318,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const fileSize = 'size' in fileInput ? fileInput.size : 1024;
 
     let textContent = '';
+    let pageCount = 1;
     let storagePath = `workspaces/${currentWorkspaceId}/${fileName}`;
 
     // Stage 1: Uploading to Supabase Storage
@@ -328,12 +330,15 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         console.warn('Storage upload note:', err);
       }
       try {
-        textContent = await fileInput.text();
+        const parsed = await extractDocumentContent(fileInput);
+        textContent = parsed.text;
+        pageCount = parsed.pageCount;
       } catch {
         textContent = `Extracted document text from ${fileName}. Contains business operational clauses, quantitative terms, and governance statements for verification.`;
       }
     } else if ('content' in fileInput) {
       textContent = fileInput.content;
+      pageCount = Math.max(1, Math.ceil(textContent.length / 1500));
     }
     await new Promise(r => setTimeout(r, 300));
 

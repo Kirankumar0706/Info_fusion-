@@ -15,6 +15,8 @@ import {
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { SUPPORTED_LANGUAGES } from '../../lib/multilingual';
 
+import { testSupabaseConnection, supabaseUrl } from '../../lib/supabase';
+
 interface TopbarProps {
   onToggleSidebar: () => void;
   onOpenUploadModal?: () => void;
@@ -26,7 +28,20 @@ export const Topbar: React.FC<TopbarProps> = ({ onToggleSidebar, onOpenUploadMod
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showSupabaseModal, setShowSupabaseModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [copiedSql, setCopiedSql] = useState(false);
+  const [supabaseStatus, setSupabaseStatus] = useState<{
+    connected: boolean;
+    authHealthy: boolean;
+    tablesCreated: boolean;
+  }>({ connected: true, authHealthy: true, tablesCreated: false });
+
   const navigate = useNavigate();
+
+  React.useEffect(() => {
+    testSupabaseConnection().then(res => {
+      setSupabaseStatus(res);
+    });
+  }, []);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,14 +97,20 @@ export const Topbar: React.FC<TopbarProps> = ({ onToggleSidebar, onOpenUploadMod
           <span>Judge Demo Mode</span>
         </button>
 
-        {/* Live Supabase Connection Indicator */}
+        {/* Supabase / Demo Mode Indicator */}
         <button
           onClick={() => setShowSupabaseModal(true)}
-          className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 transition-all shadow-sm"
-          title="Click to view Supabase Backend connection status"
+          className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono transition-all shadow-sm ${
+            supabaseStatus.tablesCreated
+              ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
+              : 'bg-amber-500/10 border border-amber-500/30 text-amber-300 hover:bg-amber-500/20'
+          }`}
+          title="Click to view Supabase & Backend Engine status"
         >
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span className="font-semibold">Supabase Connected</span>
+          <span className={`w-2 h-2 rounded-full ${supabaseStatus.tablesCreated ? 'bg-emerald-400' : 'bg-amber-400'} animate-pulse`}></span>
+          <span className="font-semibold">
+            {supabaseStatus.tablesCreated ? 'Supabase Live' : 'Demo Mode (Local Engine)'}
+          </span>
         </button>
 
         {/* Quick Upload Button */}
@@ -240,18 +261,41 @@ export const Topbar: React.FC<TopbarProps> = ({ onToggleSidebar, onOpenUploadMod
               </div>
 
               <div className="p-3.5 rounded-xl bg-indigo-950/30 border border-indigo-500/30 space-y-2">
-                <div className="font-semibold text-indigo-200">Database Schema Ready</div>
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-indigo-200">Database Schema (13 Tables)</span>
+                  <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
+                    supabaseStatus.tablesCreated 
+                      ? 'bg-emerald-500/20 text-emerald-300' 
+                      : 'bg-amber-500/20 text-amber-300'
+                  }`}>
+                    {supabaseStatus.tablesCreated ? 'ONLINE' : 'LOCAL ENGINE ACTIVE'}
+                  </span>
+                </div>
                 <p className="text-slate-300 leading-relaxed text-[11px]">
-                  Your project has all 13 tables, RLS policies, and indexes defined in <code className="text-indigo-300 font-mono">supabase/schema.sql</code>. If you haven't executed it in your Supabase SQL Editor yet, you can run it with one click.
+                  {supabaseStatus.tablesCreated 
+                    ? 'All 13 tables, RLS policies, and storage buckets are online in your Supabase project.'
+                    : 'The app is running in Isolated Demo Mode with local multi-organization persistence. To connect your remote PostgreSQL database, run supabase/schema.sql in your Supabase SQL editor.'}
                 </p>
-                <a
-                  href="https://supabase.com/dashboard/project/nnnogyufymzlpsgblrda/sql/new"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold underline"
-                >
-                  Open Supabase SQL Editor in Browser →
-                </a>
+                <div className="flex items-center gap-2 pt-1">
+                  <a
+                    href="https://supabase.com/dashboard/project/nnnogyufymzlpsgblrda/sql/new"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-all shadow-sm"
+                  >
+                    Open Supabase SQL Editor →
+                  </a>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText("supabase/schema.sql");
+                      setCopiedSql(true);
+                      setTimeout(() => setCopiedSql(false), 2000);
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] px-3 py-1.5 rounded-lg bg-surface-100 hover:bg-surface-50 border border-white/[0.08] text-slate-300 transition-all"
+                  >
+                    {copiedSql ? '✓ Path Copied' : 'Copy File Path'}
+                  </button>
+                </div>
               </div>
             </div>
 
