@@ -138,6 +138,59 @@ function parseBody(req) {
   });
 }
 
+const distDir = path.join(rootDir, 'dist');
+const MIME_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.pdf': 'application/pdf',
+};
+
+function tryServeStatic(res, pathname) {
+  if (!fs.existsSync(distDir)) return false;
+
+  let safePath = path.normalize(pathname).replace(/^(\.\.[\/\\])+/, '');
+  let filePath = path.join(distDir, safePath === '/' || safePath === '\\' ? 'index.html' : safePath);
+
+  // Prevent directory traversal
+  if (!filePath.startsWith(distDir)) return false;
+
+  // Serve static asset file if it exists
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+    const ext = path.extname(filePath).toLowerCase();
+    const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Access-Control-Allow-Origin': '*',
+    });
+    fs.createReadStream(filePath).pipe(res);
+    return true;
+  }
+
+  // SPA navigation fallback: serve index.html for application routes
+  const indexPath = path.join(distDir, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+    });
+    fs.createReadStream(indexPath).pipe(res);
+    return true;
+  }
+
+  return false;
+}
+
 const server = http.createServer(async (req, res) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -152,6 +205,17 @@ const server = http.createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
+
+  // If request is not for the backend API, serve the frontend application
+  if (!pathname.startsWith('/api')) {
+    const served = tryServeStatic(res, pathname);
+    if (served) return;
+    // Fallback: redirect to Vite dev server if dist not ready
+    res.writeHead(302, { 'Location': `http://127.0.0.1:5173${url.pathname}${url.search}` });
+    res.end();
+    return;
+  }
+
   const client = getSupabaseClient(req);
 
   try {
