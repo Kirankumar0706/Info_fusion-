@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { Decision, DecisionStatus } from '../types';
 import { safeMutation } from './safeSupabase';
+import { generateId, isUUID } from '../lib/uuid';
 
 const STORAGE_KEY_DECISIONS = 'infofusion_decisions_v3';
 
@@ -35,6 +36,7 @@ export const decisionService = {
     if (supabase) {
       safeMutation(
         supabase.from('decisions').insert({
+          id: isUUID(decision.id) ? decision.id : generateId(),
           workspace_id: decision.workspace_id,
           title: decision.title,
           decision: decision.summary || decision.title,

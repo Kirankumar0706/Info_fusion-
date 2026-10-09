@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { Fact } from '../types';
 import { safeMutation } from './safeSupabase';
+import { generateId, isUUID } from '../lib/uuid';
 
 const STORAGE_KEY_FACTS = 'infofusion_facts_v3';
 
@@ -55,8 +56,10 @@ export const factService = {
       safeMutation(
         supabase.from('facts').insert(
           newFacts.map(f => ({
+            id: isUUID(f.id) ? f.id : generateId(),
             workspace_id: workspaceId,
-            document_id: f.document_id || (f.source_id.startsWith('src-') ? undefined : f.source_id),
+            organization_id: isUUID(f.organization_id) ? f.organization_id : undefined,
+            document_id: isUUID(f.document_id) ? f.document_id : (isUUID(f.source_id) ? f.source_id : undefined),
             fact_text: f.claim || f.fact_text || '',
             fact_type: f.category || f.fact_type || 'general',
             value: f.value || f.normalized_value || '',

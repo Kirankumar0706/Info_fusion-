@@ -10,6 +10,7 @@ import {
 } from '../services';
 import { processWorkspaceAnalysis, createGenericTestDocuments } from '../lib/genericExtractor';
 import { extractDocumentContent } from '../lib/documentParser';
+import { generateId } from '../lib/uuid';
 import { useAuth } from './AuthContext';
 
 interface CreateWorkspaceInput {
@@ -77,8 +78,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Re-fetch workspaces when currentOrganization changes
   useEffect(() => {
-    const list = workspaceService.getWorkspaces(currentOrganization?.id);
-    setWorkspaces(list);
+    workspaceService.fetchWorkspacesAsync(currentOrganization?.id).then(list => {
+      setWorkspaces(list);
+    });
   }, [currentOrganization?.id]);
 
   // Current Workspace ID - Defaults to NULL (no workspace selected initially)
@@ -99,10 +101,12 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [dataVersion, setDataVersion] = useState(0);
   const bumpVersion = () => setDataVersion(v => v + 1);
 
-  // Sync active workspace ID to localStorage
+  // Sync active workspace ID to localStorage and fetch remote data from Supabase
   useEffect(() => {
     if (currentWorkspaceId) {
       localStorage.setItem(ACTIVE_WS_KEY, currentWorkspaceId);
+      sourceService.fetchDocumentsAsync(currentWorkspaceId).then(() => bumpVersion());
+      factService.fetchFactsAsync(currentWorkspaceId).then(() => bumpVersion());
     } else {
       localStorage.removeItem(ACTIVE_WS_KEY);
     }
@@ -250,7 +254,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (!currentWorkspaceId) return;
     actionService.createAction({
       ...actionData,
-      id: `act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: generateId(),
       workspace_id: currentWorkspaceId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -270,7 +274,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (!currentWorkspaceId) return;
     decisionService.createDecision({
       ...decisionData,
-      id: `dec-${Date.now()}`,
+      id: generateId(),
       workspace_id: currentWorkspaceId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -282,7 +286,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const generateReport = (reportType: ReportItem['report_type'], title: string): ReportItem => {
     if (!currentWorkspaceId) throw new Error('No active workspace');
     const newReport: ReportItem = {
-      id: `rep-${Date.now()}`,
+      id: generateId(),
       workspace_id: currentWorkspaceId,
       report_type: reportType,
       title,
@@ -344,7 +348,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     // Stage 2: Extracting & Chunking
     setUploadStage('Extracting content and indexing document chunks...');
-    const sourceId = `src-${Date.now()}`;
+    const sourceId = generateId();
     sourceService.storeDocumentChunks(sourceId, currentWorkspaceId, textContent);
     await new Promise(r => setTimeout(r, 350));
 

@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { Organization, OrganizationMember } from '../types';
+import { generateId, isUUID } from '../lib/uuid';
 
 const STORAGE_KEY_ORGS = 'infofusion_organizations_v3';
 const STORAGE_KEY_MEMBERS = 'infofusion_org_members_v3';
@@ -42,32 +43,42 @@ export const organizationService = {
   },
 
   async createOrganization(name: string, userId?: string): Promise<Organization> {
+    const orgId = generateId();
+    const validUserId = isUUID(userId) ? userId : undefined;
+
     const newOrg: Organization = {
-      id: `org-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      id: orgId,
       name: name.trim(),
-      created_by: userId,
+      created_by: validUserId,
       created_at: new Date().toISOString(),
     };
 
-    if (supabase && userId) {
+    if (supabase) {
       try {
+        const insertPayload: any = {
+          id: orgId,
+          name: newOrg.name,
+        };
+        if (validUserId) {
+          insertPayload.created_by = validUserId;
+        }
+
         const { data, error } = await supabase
           .from('organizations')
-          .insert({
-            name: newOrg.name,
-            created_by: userId,
-          })
+          .insert(insertPayload)
           .select()
           .single();
 
         if (!error && data) {
           const org = data as Organization;
-          // Also register owner member
-          await supabase.from('organization_members').insert({
-            organization_id: org.id,
-            user_id: userId,
-            role: 'owner',
-          });
+          if (validUserId) {
+            await supabase.from('organization_members').insert({
+              id: generateId(),
+              organization_id: org.id,
+              user_id: validUserId,
+              role: 'owner',
+            });
+          }
           const list = getLocal<Organization[]>(STORAGE_KEY_ORGS, []);
           setLocal(STORAGE_KEY_ORGS, [org, ...list]);
           return org;
@@ -85,7 +96,7 @@ export const organizationService = {
     if (userId) {
       const members = getLocal<OrganizationMember[]>(STORAGE_KEY_MEMBERS, []);
       members.push({
-        id: `mem-${Date.now()}`,
+        id: generateId(),
         organization_id: newOrg.id,
         user_id: userId,
         role: 'owner',

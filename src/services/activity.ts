@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { ActivityLog } from '../types';
 import { safeMutation } from './safeSupabase';
+import { generateId, isUUID } from '../lib/uuid';
 
 const STORAGE_KEY_ACTIVITY = 'infofusion_activity_v3';
 
@@ -39,8 +40,9 @@ export const activityService = {
     }
   ): ActivityLog {
     const list = getLocal<ActivityLog[]>(STORAGE_KEY_ACTIVITY, []);
+    const newLogId = generateId();
     const newLog: ActivityLog = {
-      id: `actlog-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: newLogId,
       workspace_id: workspaceId,
       user_id: entry.user_id,
       user_name: entry.user_name || 'System Analyst',
@@ -57,8 +59,9 @@ export const activityService = {
     if (supabase) {
       safeMutation(
         supabase.from('activity_logs').insert({
+          id: newLogId,
           workspace_id: workspaceId,
-          user_id: entry.user_id || null,
+          user_id: isUUID(entry.user_id) ? entry.user_id : null,
           action: entry.action_type,
           entity_type: entry.entity_type,
           metadata: { ...entry.metadata, title: entry.entity_title, user_name: entry.user_name },

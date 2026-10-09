@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { Source, DocumentChunk, ProcessingStatus } from '../types';
 import { safeMutation } from './safeSupabase';
+import { generateId, isUUID } from '../lib/uuid';
 
 const STORAGE_KEY_SOURCES = 'infofusion_sources_v3';
 const STORAGE_KEY_CHUNKS = 'infofusion_document_chunks_v3';
@@ -77,8 +78,10 @@ export const documentService = {
     if (supabase) {
       safeMutation(
         supabase.from('documents').insert({
-          id: source.id.startsWith('src-') ? undefined : source.id,
+          id: isUUID(source.id) ? source.id : undefined,
           workspace_id: source.workspace_id,
+          organization_id: isUUID(source.organization_id) ? source.organization_id : undefined,
+          uploaded_by: isUUID(source.uploaded_by) ? source.uploaded_by : null,
           file_name: source.file_name,
           file_type: source.file_type,
           storage_path: source.storage_path,
@@ -149,7 +152,7 @@ export const documentService = {
       .filter(p => p.length > 20);
 
     const chunks: DocumentChunk[] = (paragraphs.length > 0 ? paragraphs : [fullText]).map((content, idx) => ({
-      id: `chk-${Date.now()}-${idx}`,
+      id: generateId(),
       document_id: documentId,
       workspace_id: workspaceId,
       chunk_index: idx + 1,
@@ -165,7 +168,8 @@ export const documentService = {
       safeMutation(
         supabase.from('document_chunks').insert(
           chunks.map(c => ({
-            document_id: c.document_id,
+            id: c.id,
+            document_id: isUUID(c.document_id) ? c.document_id : undefined,
             workspace_id: c.workspace_id,
             chunk_index: c.chunk_index,
             content: c.content,
@@ -182,6 +186,7 @@ export const documentService = {
 // Aliased export
 export const sourceService = {
   getSources: documentService.getDocuments,
+  fetchDocumentsAsync: documentService.fetchDocumentsAsync,
   getSource: documentService.getSource,
   addSource: documentService.addSource,
   deleteSource: documentService.deleteSource,

@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Sanitize URL by removing trailing /rest/v1 or trailing slashes
-const rawUrl = (import.meta.env.VITE_SUPABASE_URL || 'https://nnnogyufymzlpsgblrda.supabase.co').trim();
+const rawUrl = (import.meta.env.VITE_SUPABASE_URL || 'https://ysotsjbcoovxbqpshmat.supabase.co').trim();
 export const supabaseUrl = rawUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
 export const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
@@ -11,13 +11,13 @@ export const isSupabaseConfigured = Boolean(
   supabaseUrl !== 'https://your-project.supabase.co'
 );
 
-// Extract project reference ID (e.g. nnnogyufymzlpsgblrda)
+// Extract project reference ID (e.g. ysotsjbcoovxbqpshmat)
 export const supabaseProjectId = (() => {
   try {
     const u = new URL(supabaseUrl);
-    return u.hostname.split('.')[0] || 'nnnogyufymzlpsgblrda';
+    return u.hostname.split('.')[0] || 'ysotsjbcoovxbqpshmat';
   } catch {
-    return 'nnnogyufymzlpsgblrda';
+    return 'ysotsjbcoovxbqpshmat';
   }
 })();
 
@@ -76,6 +76,9 @@ export async function testSupabaseConnection(): Promise<{
     try {
       const { data, error } = await supabase.from('workspaces').select('id').limit(1);
       if (!error) {
+        tablesCreated = true;
+      } else if (error.code === '42501') {
+        // Table exists in Postgres, RLS/grants active
         tablesCreated = true;
       }
     } catch {

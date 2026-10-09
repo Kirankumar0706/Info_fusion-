@@ -1,4 +1,5 @@
 import { Fact, Conflict, EvidenceGap, Finding, Decision, ActionItem, Source, EvidenceItem } from '../types';
+import { generateId } from './uuid';
 
 export interface ExtractionResult {
   facts: Fact[];
@@ -79,14 +80,14 @@ export const extractFactsFromContent = (
       if (rawKey.toLowerCase() === 'subject' || rawKey.toLowerCase() === 'customer' || rawKey.toLowerCase() === 'entity') {
         detectedSubject = rawVal;
       } else {
-        const factId = `fact-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-        const evidenceId = `ev-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        const factId = generateId();
+        const evidenceId = generateId();
         const normalizedKey = cleanKey(rawKey);
 
         // Check if value indicates a missing requirement or gap
         if (/missing|not attached|pending verification|requires approval|unverified/i.test(rawVal)) {
           evidenceGaps.push({
-            id: `gap-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            id: generateId(),
             workspace_id: workspaceId,
             claim: `${rawKey}: ${rawVal}`,
             category: 'Missing Evidence',
@@ -139,8 +140,8 @@ export const extractFactsFromContent = (
       if (sentenceValMatch) {
         const rawAttr = sentenceValMatch[1].trim();
         const rawVal = sentenceValMatch[2].trim();
-        const factId = `fact-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-        const evidenceId = `ev-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        const factId = generateId();
+        const evidenceId = generateId();
 
         facts.push({
           id: factId,
@@ -182,7 +183,7 @@ export const extractFactsFromContent = (
     if (/requires\s+[a-zA-Z\s]+(?:certificate|approval|license|audit|sign-off)|pending\s+(?:approval|review|sign-off)/i.test(line)) {
       if (!evidenceGaps.some(g => g.claimed_location === location)) {
         evidenceGaps.push({
-          id: `gap-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          id: generateId(),
           workspace_id: workspaceId,
           claim: line,
           category: 'Missing Evidence',
@@ -201,7 +202,7 @@ export const extractFactsFromContent = (
 
   // Fallback: If text had no key-value formatting, extract at least generic facts from paragraphs
   if (facts.length === 0 && lines.length > 0) {
-    const factId = `fact-${Date.now()}-1`;
+    const factId = generateId();
     facts.push({
       id: factId,
       workspace_id: workspaceId,
@@ -225,7 +226,7 @@ export const extractFactsFromContent = (
     });
 
     evidenceItems.push({
-      id: `ev-${Date.now()}-1`,
+      id: generateId(),
       workspace_id: workspaceId,
       fact_id: factId,
       source_id: sourceId,
@@ -285,7 +286,7 @@ export const processWorkspaceAnalysis = (
           newFact.status = 'conflicting';
           oldFact.status = 'conflicting';
 
-          const conflictId = `conf-${Date.now()}-${detectedConflicts.length + 1}`;
+          const conflictId = generateId();
           detectedConflicts.push({
             id: conflictId,
             workspace_id: workspaceId,
@@ -321,7 +322,7 @@ export const processWorkspaceAnalysis = (
 
   // Generate findings for detected contradictions
   for (const conf of detectedConflicts) {
-    const findingId = `find-${Date.now()}-${findings.length + 1}`;
+    const findingId = generateId();
     findings.push({
       id: findingId,
       workspace_id: workspaceId,
@@ -343,7 +344,7 @@ export const processWorkspaceAnalysis = (
 
     // Generate actionable step
     actions.push({
-      id: `act-${Date.now()}-${actions.length + 1}`,
+      id: generateId(),
       workspace_id: workspaceId,
       title: `Resolve ${conf.attribute || 'Parameter'} Conflict`,
       description: `Review difference between ${conf.source_a_name} and ${conf.source_b_name}. Confirm canonical binding figure.`,
@@ -359,7 +360,7 @@ export const processWorkspaceAnalysis = (
 
   // Generate findings for Evidence Gaps
   for (const gap of extractedGaps) {
-    const findingId = `find-${Date.now()}-${findings.length + 1}`;
+    const findingId = generateId();
     findings.push({
       id: findingId,
       workspace_id: workspaceId,
@@ -379,7 +380,7 @@ export const processWorkspaceAnalysis = (
     });
 
     actions.push({
-      id: `act-${Date.now()}-${actions.length + 1}`,
+      id: generateId(),
       workspace_id: workspaceId,
       title: `Request Missing Evidence: ${gap.claim.slice(0, 40)}`,
       description: gap.recommended_action,
@@ -396,7 +397,7 @@ export const processWorkspaceAnalysis = (
   // If no issues, create a general baseline finding
   if (findings.length === 0 && extractedFacts.length > 0) {
     findings.push({
-      id: `find-${Date.now()}-1`,
+      id: generateId(),
       workspace_id: workspaceId,
       title: `Document Ingestion Complete for ${newSource.file_name}`,
       description: `Successfully extracted ${extractedFacts.length} normalized statements without contradictions.`,
@@ -417,7 +418,7 @@ export const processWorkspaceAnalysis = (
   // 4. Decision Synthesis
   const hasIssues = detectedConflicts.length > 0 || allGaps.length > 0;
   const decision: Decision = {
-    id: `dec-${Date.now()}`,
+    id: generateId(),
     workspace_id: workspaceId,
     title: `Operational Baseline Review for ${workspaceName}`,
     status: detectedConflicts.length > 0 ? 'review_required' : allGaps.length > 0 ? 'insufficient_evidence' : 'ready',

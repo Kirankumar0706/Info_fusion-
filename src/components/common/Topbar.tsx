@@ -15,7 +15,7 @@ import {
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { SUPPORTED_LANGUAGES } from '../../lib/multilingual';
 
-import { testSupabaseConnection, supabaseUrl } from '../../lib/supabase';
+import { testSupabaseConnection, supabaseUrl, supabaseProjectId } from '../../lib/supabase';
 
 interface TopbarProps {
   onToggleSidebar: () => void;
@@ -278,7 +278,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onToggleSidebar, onOpenUploadMod
                 </p>
                 <div className="flex items-center gap-2 pt-1">
                   <a
-                    href="https://supabase.com/dashboard/project/nnnogyufymzlpsgblrda/sql/new"
+                    href={`https://supabase.com/dashboard/project/${supabaseProjectId}/sql/new`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-[11px] px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-all shadow-sm"

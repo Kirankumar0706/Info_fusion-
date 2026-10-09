@@ -156,9 +156,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (error) {
           setIsLoading(false);
-          // If Supabase returns invalid login credentials or unconfirmed email, return clear error message
-          setAuthError(error.message);
-          return { success: false, error: error.message };
+          let friendly = error.message;
+          const lower = error.message.toLowerCase();
+          if (lower.includes('email not confirmed') || (error as any).code === 'email_not_confirmed') {
+            friendly = 'Email confirmation pending. Please check your inbox or click "One-Click Judge Demo Sign In" to enter immediately.';
+          } else if (lower.includes('invalid login credentials') || (error as any).code === 'invalid_credentials') {
+            friendly = 'Invalid email or password. Please verify your credentials or create an account.';
+          }
+          setAuthError(friendly);
+          return { success: false, error: friendly };
         }
 
         if (data.user) {
@@ -215,8 +221,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (error) {
           setIsLoading(false);
-          setAuthError(error.message);
-          return { success: false, error: error.message };
+          let friendly = error.message;
+          const lower = error.message.toLowerCase();
+          if (lower.includes('rate limit') || (error as any).code === 'over_email_send_rate_limit') {
+            friendly = 'Supabase email rate limit reached. Please wait a few moments or click "Launch Instant Enterprise Session" / Judge Demo to continue.';
+          } else if (lower.includes('user already registered') || lower.includes('already exists')) {
+            friendly = 'An account with this email already exists. Please sign in instead.';
+          } else if (lower.includes('password should be at least')) {
+            friendly = 'Password must be at least 6 characters.';
+          }
+          setAuthError(friendly);
+          return { success: false, error: friendly };
         }
 
         const newUser = authData.user;

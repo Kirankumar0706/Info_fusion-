@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { Conflict, ConflictStatus } from '../types';
 import { safeMutation } from './safeSupabase';
+import { generateId, isUUID } from '../lib/uuid';
 
 const STORAGE_KEY_CONFLICTS = 'infofusion_conflicts_v3';
 
@@ -36,7 +37,10 @@ export const contradictionService = {
       safeMutation(
         supabase.from('contradictions').insert(
           items.map(c => ({
+            id: isUUID(c.id) ? c.id : generateId(),
             workspace_id: workspaceId,
+            fact_a_id: isUUID(c.fact_a_id) ? c.fact_a_id : null,
+            fact_b_id: isUUID(c.fact_b_id) ? c.fact_b_id : null,
             description: c.difference_summary || c.explanation || 'Discrepancy detected between claims',
             severity: c.severity,
             status: c.status,

@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { EvidenceItem, EvidenceGap } from '../types';
 import { safeMutation } from './safeSupabase';
+import { generateId, isUUID } from '../lib/uuid';
 
 const STORAGE_KEY_EVIDENCE = 'infofusion_evidence_v3';
 const STORAGE_KEY_GAPS = 'infofusion_evidence_gaps_v3';
@@ -37,7 +38,9 @@ export const evidenceService = {
       safeMutation(
         supabase.from('evidence').insert(
           items.map(e => ({
+            id: isUUID(e.id) ? e.id : generateId(),
             workspace_id: workspaceId,
+            fact_id: isUUID(e.fact_id) ? e.fact_id : null,
             source_location: e.source_location,
             evidence_text: e.evidence_text,
             evidence_type: e.evidence_type || 'direct_statement',
@@ -62,7 +65,9 @@ export const evidenceService = {
       safeMutation(
         supabase.from('evidence_gaps').insert(
           gaps.map(g => ({
+            id: isUUID(g.id) ? g.id : generateId(),
             workspace_id: workspaceId,
+            fact_id: isUUID(g.fact_id) ? g.fact_id : null,
             description: g.claim || g.description || '',
             required_evidence: g.recommended_action || g.required_evidence || 'Direct verification certificate required',
             severity: g.severity || 'medium',

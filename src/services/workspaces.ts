@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { Workspace } from '../types';
+import { generateId, isUUID } from '../lib/uuid';
 
 const STORAGE_KEY_WORKSPACES = 'infofusion_workspaces_v3';
 
@@ -33,7 +34,7 @@ export const workspaceService = {
     if (supabase) {
       try {
         let query = supabase.from('workspaces').select('*').order('created_at', { ascending: false });
-        if (orgId) {
+        if (orgId && isUUID(orgId)) {
           query = query.eq('organization_id', orgId);
         }
         const { data, error } = await query;
@@ -76,8 +77,9 @@ export const workspaceService = {
     owner_id?: string;
   }): Workspace {
     const list = this.getWorkspaces();
+    const newWsId = generateId();
     const newWs: Workspace = {
-      id: `ws-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      id: newWsId,
       organization_id: data.organization_id,
       name: data.name.trim(),
       organization: data.organization.trim(),
@@ -95,20 +97,21 @@ export const workspaceService = {
     setLocal(STORAGE_KEY_WORKSPACES, list);
 
     // Asynchronously replicate to Supabase if available
-    if (supabase && data.owner_id && data.organization_id) {
+    if (supabase) {
       (async () => {
         try {
           await supabase.from('workspaces').insert({
-            organization_id: data.organization_id,
+            id: newWsId,
+            organization_id: isUUID(data.organization_id) ? data.organization_id : undefined,
             name: newWs.name,
             description: newWs.description,
             industry: newWs.industry,
             use_case: newWs.use_case,
-            created_by: data.owner_id,
+            created_by: isUUID(data.owner_id) ? data.owner_id : null,
             status: 'active',
           });
         } catch (err) {
-          console.warn('Supabase insert workspace:', err);
+          console.warn('Supabase createWorkspace sync notice:', err);
         }
       })();
     }

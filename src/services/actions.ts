@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { ActionItem, ActionStatus } from '../types';
 import { safeMutation } from './safeSupabase';
+import { generateId, isUUID } from '../lib/uuid';
 
 const STORAGE_KEY_ACTIONS = 'infofusion_actions_v3';
 
@@ -35,8 +36,9 @@ export const actionService = {
     if (supabase) {
       safeMutation(
         supabase.from('actions').insert({
+          id: isUUID(action.id) ? action.id : generateId(),
           workspace_id: action.workspace_id,
-          decision_id: action.decision_id || null,
+          decision_id: isUUID(action.decision_id) ? action.decision_id : null,
           title: action.title,
           description: action.description,
           priority: action.priority,

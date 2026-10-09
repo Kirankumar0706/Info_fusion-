@@ -129,10 +129,10 @@ CREATE TABLE IF NOT EXISTS public.evidence (
 
 CREATE TABLE IF NOT EXISTS public.contradictions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    organization_id UUID REFERENCES public.organizations(id) ON DELETE CASCADE,
     workspace_id UUID NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
-    fact_a_id UUID NOT NULL REFERENCES public.facts(id) ON DELETE CASCADE,
-    fact_b_id UUID NOT NULL REFERENCES public.facts(id) ON DELETE CASCADE,
+    fact_a_id UUID REFERENCES public.facts(id) ON DELETE SET NULL,
+    fact_b_id UUID REFERENCES public.facts(id) ON DELETE SET NULL,
     description TEXT NOT NULL,
     severity TEXT DEFAULT 'high' CHECK (severity IN ('critical', 'high', 'medium', 'low')),
     status TEXT DEFAULT 'open' CHECK (status IN ('open', 'under_review', 'resolved', 'dismissed', 'unresolved', 'investigating')),
@@ -146,11 +146,11 @@ CREATE TABLE IF NOT EXISTS public.contradictions (
 
 CREATE TABLE IF NOT EXISTS public.evidence_gaps (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    organization_id UUID REFERENCES public.organizations(id) ON DELETE CASCADE,
     workspace_id UUID NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
     fact_id UUID REFERENCES public.facts(id) ON DELETE SET NULL,
     description TEXT NOT NULL,
-    required_evidence TEXT NOT NULL,
+    required_evidence TEXT,
     severity TEXT DEFAULT 'medium' CHECK (severity IN ('critical', 'high', 'medium', 'low')),
     status TEXT DEFAULT 'open' CHECK (status IN ('open', 'evidence_required', 'under_review', 'resolved', 'unverified')),
     created_at TIMESTAMPTZ DEFAULT NOW()
@@ -162,7 +162,7 @@ CREATE TABLE IF NOT EXISTS public.evidence_gaps (
 
 CREATE TABLE IF NOT EXISTS public.findings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    organization_id UUID REFERENCES public.organizations(id) ON DELETE CASCADE,
     workspace_id UUID NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     description TEXT NOT NULL,
@@ -174,7 +174,7 @@ CREATE TABLE IF NOT EXISTS public.findings (
 
 CREATE TABLE IF NOT EXISTS public.decisions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    organization_id UUID REFERENCES public.organizations(id) ON DELETE CASCADE,
     workspace_id UUID NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     decision TEXT NOT NULL,
@@ -185,7 +185,7 @@ CREATE TABLE IF NOT EXISTS public.decisions (
 
 CREATE TABLE IF NOT EXISTS public.actions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    organization_id UUID REFERENCES public.organizations(id) ON DELETE CASCADE,
     workspace_id UUID NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
     decision_id UUID REFERENCES public.decisions(id) ON DELETE SET NULL,
     title TEXT NOT NULL,
@@ -203,7 +203,7 @@ CREATE TABLE IF NOT EXISTS public.actions (
 
 CREATE TABLE IF NOT EXISTS public.reports (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    organization_id UUID REFERENCES public.organizations(id) ON DELETE CASCADE,
     workspace_id UUID NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
     report_type TEXT NOT NULL,
     title TEXT NOT NULL,
@@ -213,7 +213,7 @@ CREATE TABLE IF NOT EXISTS public.reports (
 
 CREATE TABLE IF NOT EXISTS public.activity_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    organization_id UUID REFERENCES public.organizations(id) ON DELETE CASCADE,
     workspace_id UUID NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
     user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     action TEXT NOT NULL,
@@ -408,3 +408,17 @@ CREATE INDEX IF NOT EXISTS idx_decisions_ws ON public.decisions(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_actions_ws ON public.actions(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_reports_ws ON public.reports(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_activity_ws ON public.activity_logs(workspace_id);
+
+-- ====================================================================
+-- 12. SCHEMA GRANTS FOR POSTGREST (ANON & AUTHENTICATED ROLES)
+-- ====================================================================
+
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL ROUTINES IN SCHEMA public TO anon, authenticated;
+
+-- Ensure future tables also inherit these permissions
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ROUTINES TO anon, authenticated;

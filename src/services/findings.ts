@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { Finding } from '../types';
 import { safeMutation } from './safeSupabase';
+import { generateId, isUUID } from '../lib/uuid';
 
 const STORAGE_KEY_FINDINGS = 'infofusion_findings_v3';
 
@@ -36,6 +37,7 @@ export const findingService = {
       safeMutation(
         supabase.from('findings').insert(
           items.map(f => ({
+            id: isUUID(f.id) ? f.id : generateId(),
             workspace_id: workspaceId,
             title: f.title,
             description: f.description,
